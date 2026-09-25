@@ -59,6 +59,7 @@ Authoritative reference: [PRD Section 3 (Data Model)](./PRD_Speqtus_Ordering_App
 | `approval_status` | `approval_status` | No | `'pending'` | Enum: `'pending'`, `'approved'`, `'rejected'` |
 | `approved_by` | `uuid` | Yes | `null` | Foreign key → `users.id` (Admin who approved) |
 | `approved_at` | `timestamptz` | Yes | `null` | Timestamp when approved by admin |
+| `push_token` | `text` | Yes | `null` | Expo push notification device token (`ExponentPushToken[...]`) |
 | `created_at` | `timestamptz` | No | `now()` | Account creation timestamp |
 
 ### 1.5 `addresses`
@@ -193,6 +194,7 @@ CREATE TYPE payment_method AS ENUM (
 | `unitPriceAtOrder` | `number \| null` | `unit_price_at_order` | `OrderItemDTO` |
 | `orderNumber` | `string` | `order_number` | `OrderDTO` |
 | `approvalStatus` | `'pending' \| 'approved' \| 'rejected'` | `approval_status` | `UserProfile` |
+| `pushToken` | `string \| null` | `push_token` | `UserProfile` |
 | `orderStatus` | `'requested' \| 'confirmed' \| 'dispatched' \| 'delivered' \| 'cancelled'` | `status` | `OrderDTO` |
 | `paymentStatus` | `'not_applicable' \| 'pending' \| 'paid' \| 'failed'` | `payment_status` | `OrderDTO` |
 

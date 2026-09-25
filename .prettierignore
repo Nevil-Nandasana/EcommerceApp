@@ -1,0 +1,8 @@
+node_modules/
+.expo/
+dist/
+web-build/
+_temp_app/
+CatPDF/
+UiDesgins/
+Planning/

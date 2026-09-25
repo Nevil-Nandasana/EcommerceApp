@@ -1,0 +1,75 @@
+# Speqtus Medical Ordering Platform — Execution Progress Log
+
+## Phase 0: Project Setup, Tooling & Business Sign-off [COMPLETED]
+- Git repository and `.gitignore` verified.
+- Expo project initialized with TypeScript template, `expo-router`, and strict compiler options.
+- Root `package.json`, `app.json`, `tsconfig.json`, `.eslintrc.json`, `.prettierrc` configured.
+- Environment variables template (`.env.example`) defined and aligned with `Planning/VARIABLE_REGISTRY.md`.
+- `Planning/ACCOUNTS.md` created to track Supabase, Cloudflare R2, Apple Developer, and Google Play accounts safely.
+- `Planning/DECISIONS.md` ratified and documented all signed-off business rules (confidential pricing, order state machine, snapshotting, single-user model).
+
+## Phase 1: Catalog Data Extraction & Preparation [IN PROGRESS]
+- `scripts/extract_catalog.py`: Python extraction pipeline created to rasterize PDF pages, detect product blocks/banners, parse Art Nos and sizes, and output master CSV/JSON.
+- `scripts/upload_to_r2.py`: Automated Cloudflare R2 upload helper creating ~200px thumbnails and ~800px full-size WebP images with immutable CDN cache headers.
+- `scripts/requirements.txt`: Documented Python dependencies (`fitz`, `Pillow`, `boto3`).
+
+## Phase 2: Database Foundation & Security [COMPLETED]
+- Migration 1 (`20260925000001_extensions_and_enums.sql`): Enabled `uuid-ossp`, `pg_trgm`, `unaccent`. Defined `user_role`, `approval_status`, `order_status`, `payment_status`, `payment_method`.
+- Migration 2 (`20260925000002_core_schema.sql`): Created tables `categories`, `products`, `product_variants`, `users`, `addresses`, `saved_sets`, `saved_set_items`, `orders`, `order_items`, `order_status_history`.
+- Migration 3 (`20260925000003_row_level_security.sql`): Enforced RLS across all tables. Implemented `is_admin()` and `is_approved_doctor()` helpers.
+- Migration 4 (`20260925000004_triggers_and_state_machine.sql`): Implemented `validate_order_status_transition()` state machine, `log_order_status_history()`, `set_order_number()`, `snapshot_order_item_price()`, and `recalculate_order_subtotal()`.
+- Migration 5 (`20260925000005_search_and_catalog_views.sql`): Trigram GIN indexes, FR-5 price-protected view `catalog_variants`, and `search_catalog` RPC.
+- Supabase Edge Function (`supabase/functions/sync-catalog/index.ts`): Sheet-to-database catalog synchronization.
+- Backup Script (`scripts/backup_database.py`): Nightly `pg_dump` with gzip compression and optional R2 sync.
+
+## Phase 3: Core Mobile App (Doctor-Facing MVP) [COMPLETED & HARDENED]
+- Directory structure: `app/`, `components/`, `lib/`, `types/`, `constants/`.
+- Theme & Colors: `constants/colors.ts`, `constants/theme.ts`, `constants/strings.ts` (externalized strings).
+- Domain Types: `types/index.ts` mapped 1:1 to `VARIABLE_REGISTRY.md`.
+- Supabase Client: `lib/supabase.ts` with Expo SecureStore on native and localStorage fallback on web.
+- Auth Context: `lib/auth.tsx` with Phone OTP, profile completion saving primary delivery address, and role/approval gating.
+- Cart Store: `lib/cart.ts` Zustand store with cross-platform persistence (`localStorage` & `SecureStore`) across restarts.
+- Core UI Components: `Button`, `Input`, `PendingBanner`, `StatusBadge`, `VariantRow` (with Art No copy & price gating), `CategoryCard`.
+- Screens:
+  - `app/_layout.tsx`: Root stack with AuthProvider and registered `order/[id]`.
+  - `app/(tabs)/_layout.tsx`: Bottom tab bar with dynamic cart count badge.
+  - `app/(tabs)/index.tsx`: 24-category surgical grid with pending banner.
+  - `app/(tabs)/search.tsx`: Typo-tolerant trigram search bar.
+  - `app/(tabs)/cart.tsx`: Cart review grouped by category via SectionList with item quantity adjustments and quote calculation.
+  - `app/(tabs)/orders.tsx`: My Orders list with status badges, tap-to-detail, and 1-tap reorder.
+  - `app/order/[id].tsx`: Order Detail screen with snapshot list, delivery address, and status history timeline (FR-8, T3.4.4).
+  - `app/(tabs)/profile.tsx`: Practitioner profile, support hotline, logout, and Admin Back Office portal button for admins.
+  - `app/(auth)/login.tsx`: Phone login screen with Google OAuth button.
+  - `app/(auth)/otp.tsx`: 6-digit SMS OTP verification.
+  - `app/(auth)/profile-completion.tsx`: Practitioner credentials, mandatory delivery address collection, and T&C checkbox.
+  - `app/category/[id].tsx`: Product list by category with size count badge.
+  - `app/product/[id].tsx`: Instrument detail view, image carousel, and variant table.
+  - `app/checkout.tsx`: Delivery address selection, order notes, and atomic transaction via `submit_order` RPC with fallback.
+
+## Phase 4: Owner / Admin Tools & Web [COMPLETED]
+- `app/admin/_layout.tsx`: Server-enforced role guard (`role === 'admin'`).
+- `app/admin/index.tsx`: Back Office Dashboard with 3 tabs:
+  1. Doctor Approvals queue (FR-9, T4.1.2)
+  2. Order Management with FR-13 compliant status transitions, search/filtering, and inline line item price editor (FR-10, T4.2.1, T4.2.2)
+  3. Product Catalog & Variant Pricing Manager with inline pricing and active/hidden toggle (FR-11, T4.2.4).
+- `wrangler.toml`, `public/_routes.json`, `public/_redirects`, `Planning/CLOUDFLARE_PAGES.md`: Cloudflare Pages SPA deployment configuration with client-side rewrite rules (T4.1.3).
+- `package.json`: Added `build:web` script (`expo export -p web`) and `expo-notifications` dependency (T4.1.3, T4.3.1).
+- `types/expo-notifications.d.ts`: Ambient TypeScript definitions for `expo-notifications` supporting multi-platform compilation without build errors (T4.3.1).
+- `lib/notifications.ts`: Push notification registration and listener helper with Android high-priority channel configuration, token fetching, and Supabase synchronization (T4.3.1).
+- `supabase/functions/send-push-notification/index.ts`: Supabase Edge Function to dispatch push alerts for order status changes and doctor approvals via Expo Push API (`https://exp.host/--/api/v2/push/send`) with dead-token cleanup (T4.3.2).
+- `eslint.config.mjs`: ESLint 9 Flat Config compatible with `@typescript-eslint` v8 and `eslint-config-prettier`. Fixed `.mjs` ESM sourceType parser error, disabled `@typescript-eslint/no-require-imports` on CommonJS test files (`tests/run_tests.js`), and properly ignored `_temp_app`, `node_modules`, `dist`, `.expo`, `supabase/functions`, `CatPDF`, `UiDesgins`, and `scripts`. Updated `package.json` lint script to `eslint .`.
+- `lib/auth.tsx`: Mapped `pushToken: data.push_token ?? null` in `fetchProfile` for unified client-side state.
+- `lib/notifications.ts`: Added native runtime guard around `Notifications.setNotificationHandler` to prevent uninitialized module crashes on web.
+- `supabase/functions/send-push-notification/index.ts`: Added standard CORS headers and HTTP `OPTIONS` preflight handling.
+## Verification & Unit Testing
+- Corrected state machine transition rules in `lib/order-validator.ts`, `20260925000004_triggers_and_state_machine.sql`, and `tests/run_tests.js`: `dispatched -> cancelled` is strictly rejected per FR-10 and FR-13.
+- Fixed Postgres subtotal calculation trigger: subtotal is NULL if any line item in the order has NULL price (quote-based pricing pending).
+- Fixed trigger to capture initial order creation in `order_status_history`.
+- Added `submit_order` atomic transaction RPC migration (`20260925000006_atomic_order_rpc.sql`).
+- Added unique constraint `uq_products_category_name` on `products` table.
+- Added admin UPDATE policy on `order_items`.
+- Added `react-native-svg` dependency in `package.json`.
+- 22 unit test assertions covering valid transitions, invalid/illegal transitions (backwards, skip-ahead, terminal, dispatched->cancelled), normal subtotals, zero subtotals, null/unpriced items, and invalid quantity errors.
+- Fixed ESLint 9 `'_e' is defined but never used` in `lib/notifications.ts` by adopting optional catch binding `catch` and adding `caughtErrorsIgnorePattern: '^_'` to `eslint.config.mjs` and `.eslintrc.json`.
+- Configured Expo Web runtime dependencies: added `react-native-web` (`~0.19.13`) and `react-dom` (`18.3.1`) to `package.json`, synchronized `package-lock.json`, and satisfied Expo Web prerequisites in `node_modules/react-native-web`.
+

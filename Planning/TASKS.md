@@ -9,109 +9,109 @@
 ## Phase 0: Project Setup, Tooling & Business Sign-off (Week 1)
 
 ### 0.1 Repository & Monorepo Tooling (FR-0)
-- [ ] **T0.1.1** Initialize Git repository with `.gitignore`.
-- [ ] **T0.1.2** Initialize Expo project using TypeScript template (`expo-router`, strict TypeScript).
-- [ ] **T0.1.3** Create `.env.example` defining all required environment variables.
-- [ ] **T0.1.4** Set up basic ESLint and Prettier (local only, no pre-commit hooks).
+- [x] **T0.1.1** Initialize Git repository with `.gitignore`.
+- [x] **T0.1.2** Initialize Expo project using TypeScript template (`expo-router`, strict TypeScript).
+- [x] **T0.1.3** Create `.env.example` defining all required environment variables.
+- [x] **T0.1.4** Set up basic ESLint and Prettier (local only, no pre-commit hooks).
 
 ### 0.2 Accounts & Paperwork (FR-0a)
-- [ ] **T0.2.1** Create `Planning/ACCOUNTS.md` tracker to track account credentials.
-- [ ] **T0.2.2** Register and configure Supabase project.
-- [ ] **T0.2.3** Set up Cloudflare R2 bucket (`speqtus-product-images`).
-- [ ] **T0.2.4** Submit Apple Developer & Google Play Console enrollment.
+- [x] **T0.2.1** Create `Planning/ACCOUNTS.md` tracker to track account credentials.
+- [x] **T0.2.2** Register and configure Supabase project.
+- [x] **T0.2.3** Set up Cloudflare R2 bucket (`speqtus-product-images`).
+- [x] **T0.2.4** Submit Apple Developer & Google Play Console enrollment.
 
 ### 0.3 Business Rules & Decisions Sign-off (FR-0b)
-- [ ] **T0.3.1** Create `Planning/DECISIONS.md` documenting signed-off business rules.
+- [x] **T0.3.1** Create `Planning/DECISIONS.md` documenting signed-off business rules.
 
 ---
 
 ## Phase 1: Catalog Data Extraction & Preparation (Weeks 2–3)
 
 ### 1.1 Catalog Reader Pipeline
-- [ ] **T1.1.1** Set up Python script to extract images and text from catalog PDF.
+- [x] **T1.1.1** Set up Python script to extract images and text from catalog PDF.
 - [ ] **T1.2.1** Populate master Google Sheet from parsed data and verify manually.
-- [ ] **T1.3.1** Crop and upload product photos into Cloudflare R2 bucket.
+- [x] **T1.3.1** Crop and upload product photos into Cloudflare R2 bucket.
 
 ---
 
 ## Phase 2: Database Foundation & Security (Week 4)
 
 ### 2.1 Database Schema & Extensions (F-1)
-- [ ] **T2.1.1** Create Supabase migration enabling extensions: `uuid-ossp`, `pg_trgm`, `unaccent`.
-- [ ] **T2.1.2** Create migration for `categories` table.
-- [ ] **T2.1.3** Create migration for `products` table.
-- [ ] **T2.1.4** Create migration for `product_variants` table.
-- [ ] **T2.1.5** Create migration for `users` table linked to Supabase `auth.users`.
-- [ ] **T2.1.6** Create migration for `addresses` table.
-- [ ] **T2.1.7** Create migration for `orders` and `order_items` tables with snapshot columns.
-- [ ] **T2.1.8** Create migration for `order_status_history` table.
+- [x] **T2.1.1** Create Supabase migration enabling extensions: `uuid-ossp`, `pg_trgm`, `unaccent`.
+- [x] **T2.1.2** Create migration for `categories` table.
+- [x] **T2.1.3** Create migration for `products` table.
+- [x] **T2.1.4** Create migration for `product_variants` table.
+- [x] **T2.1.5** Create migration for `users` table linked to Supabase `auth.users`.
+- [x] **T2.1.6** Create migration for `addresses` table.
+- [x] **T2.1.7** Create migration for `orders` and `order_items` tables with snapshot columns.
+- [x] **T2.1.8** Create migration for `order_status_history` table.
 
 ### 2.2 Row-Level Security (RLS) (F-1, F-21)
-- [ ] **T2.2.1** Write RLS policies for `categories`, `products`, `product_variants`.
-- [ ] **T2.2.2** Write database function/view or RLS rule to strictly **strip price columns** from `product_variants` when queried by guests or pending doctors (FR-5).
-- [ ] **T2.2.3** Write RLS policies for `orders`, `order_items`, and `addresses`.
-- [ ] **T2.2.4** Write RLS policies for admin role.
+- [x] **T2.2.1** Write RLS policies for `categories`, `products`, `product_variants`.
+- [x] **T2.2.2** Write database function/view or RLS rule to strictly **strip price columns** from `product_variants` when queried by guests or pending doctors (FR-5).
+- [x] **T2.2.3** Write RLS policies for `orders`, `order_items`, and `addresses`.
+- [x] **T2.2.4** Write RLS policies for admin role.
 
 ### 2.3 Order Status State Machine (FR-13)
-- [ ] **T2.3.1** Create Postgres trigger function `validate_order_status_transition()` enforcing valid transitions.
-- [ ] **T2.3.2** Create trigger to auto-append to `order_status_history`.
+- [x] **T2.3.1** Create Postgres trigger function `validate_order_status_transition()` enforcing valid transitions.
+- [x] **T2.3.2** Create trigger to auto-append to `order_status_history`.
 
 ### 2.4 Catalog Sync Pipeline & Backups (FR-14, F-3)
-- [ ] **T2.4.1** Implement Supabase Edge Function `sync-catalog` to fetch master Google Sheet data.
-- [ ] **T2.4.2** Set up Cloudflare R2 upload helper for thumbnail + full-size images.
-- [ ] **T2.4.3** Set up simple nightly `pg_dump` backup script.
+- [x] **T2.4.1** Implement Supabase Edge Function `sync-catalog` to fetch master Google Sheet data.
+- [x] **T2.4.2** Set up Cloudflare R2 upload helper for thumbnail + full-size images.
+- [x] **T2.4.3** Set up simple nightly `pg_dump` backup script.
 
 ---
 
 ## Phase 3: Core Mobile App (Doctor-Facing MVP) (Weeks 5–7)
 
 ### 3.1 App Skeleton & Auth (FR-4)
-- [ ] **T3.1.1** Set up Expo Router directory structure and theme constants.
-- [ ] **T3.1.2** Configure Supabase client with `Expo SecureStore`.
-- [ ] **T3.1.3** Build Phone Login screen and OTP Verification screen.
-- [ ] **T3.1.4** Implement Google OAuth fallback sign-in button.
-- [ ] **T3.1.5** Build Doctor Profile Completion screen (Name, Hospital, primary address) & T&C checkbox.
-- [ ] **T3.1.6** Build persistent "Account Pending Approval" banner on the home screen.
+- [x] **T3.1.1** Set up Expo Router directory structure and theme constants.
+- [x] **T3.1.2** Configure Supabase client with `Expo SecureStore`.
+- [x] **T3.1.3** Build Phone Login screen and OTP Verification screen.
+- [x] **T3.1.4** Implement Google OAuth fallback sign-in button.
+- [x] **T3.1.5** Build Doctor Profile Completion screen (Name, Hospital, primary address) & T&C checkbox.
+- [x] **T3.1.6** Build persistent "Account Pending Approval" banner on the home screen.
 
 ### 3.2 Catalog & Product Detail (FR-1, FR-2, FR-5)
-- [ ] **T3.2.1** Build Category Grid screen (`app/(tabs)/index.tsx`).
-- [ ] **T3.2.2** Build Subcategory / Product List screen using `@shopify/flash-list`.
-- [ ] **T3.2.3** Build Product Detail screen with image carousel and description.
-- [ ] **T3.2.4** Build Variants Table with `+/-` steppers.
-- [ ] **T3.2.5** Price Visibility Rule: Gate prices behind auth/approval state.
+- [x] **T3.2.1** Build Category Grid screen (`app/(tabs)/index.tsx`).
+- [x] **T3.2.2** Build Subcategory / Product List screen using `@shopify/flash-list`.
+- [x] **T3.2.3** Build Product Detail screen with image carousel and description.
+- [x] **T3.2.4** Build Variants Table with `+/-` steppers.
+- [x] **T3.2.5** Price Visibility Rule: Gate prices behind auth/approval state.
 
 ### 3.3 Search & Cart (FR-3, FR-6)
-- [ ] **T3.3.1** Build persistent Search screen with `pg_trgm` RPC call.
-- [ ] **T3.3.2** Set up local Zustand cart store with `react-native-mmkv` persistence.
-- [ ] **T3.3.3** Build Cart screen displaying selected items grouped by category.
+- [x] **T3.3.1** Build persistent Search screen with `pg_trgm` RPC call.
+- [x] **T3.3.2** Set up local Zustand cart store with `react-native-mmkv` persistence.
+- [x] **T3.3.3** Build Cart screen displaying selected items grouped by category.
 
 ### 3.4 Checkout & Orders (FR-7, FR-8)
-- [ ] **T3.4.1** Build Checkout Review screen (simple address entry/selection, order notes).
-- [ ] **T3.4.2** Implement "Submit Order Request" atomic transaction.
-- [ ] **T3.4.3** Build "My Orders" list screen (no complex filters yet).
-- [ ] **T3.4.4** Build Order Detail screen with snapshot list and status timeline.
-- [ ] **T3.4.5** Implement simple "Reorder" action (adds current items to cart).
-- [ ] **T3.4.6** Profile & Settings screen with basic Log Out functionality.
+- [x] **T3.4.1** Build Checkout Review screen (simple address entry/selection, order notes).
+- [x] **T3.4.2** Implement "Submit Order Request" atomic transaction.
+- [x] **T3.4.3** Build "My Orders" list screen (no complex filters yet).
+- [x] **T3.4.4** Build Order Detail screen with snapshot list and status timeline.
+- [x] **T3.4.5** Implement simple "Reorder" action (adds current items to cart).
+- [x] **T3.4.6** Profile & Settings screen with basic Log Out functionality.
 
 ---
 
 ## Phase 4: Owner/Admin Tools & Web (Weeks 8–9)
 
 ### 4.1 Admin Dashboard & Approvals (FR-9, FR-12)
-- [ ] **T4.1.1** Implement role-based route guard for `/admin/*`.
-- [ ] **T4.1.2** Build "Pending Approvals" screen to approve/reject doctors.
-- [ ] **T4.1.3** Configure Expo Web build and deployment on Cloudflare Pages.
+- [x] **T4.1.1** Implement role-based route guard for `/admin/*`.
+- [x] **T4.1.2** Build "Pending Approvals" screen to approve/reject doctors.
+- [x] **T4.1.3** Configure Expo Web build and deployment on Cloudflare Pages.
 
 ### 4.2 Admin Order & Price Management (FR-10, FR-11)
-- [ ] **T4.2.1** Build Admin Orders table and Order Detail view.
-- [ ] **T4.2.2** Implement Inline Price Editor for unpriced line items.
-- [ ] **T4.2.3** Implement Status Transition Action Bar (Confirm, Dispatch, Mark Delivered, Cancel).
-- [ ] **T4.2.4** Build Admin Products list with inline price editing.
+- [x] **T4.2.1** Build Admin Orders table and Order Detail view.
+- [x] **T4.2.2** Implement Inline Price Editor for unpriced line items.
+- [x] **T4.2.3** Implement Status Transition Action Bar (Confirm, Dispatch, Mark Delivered, Cancel).
+- [x] **T4.2.4** Build Admin Products list with inline price editing.
 
 ### 4.3 Push Notifications & Support (FR-15, F-18)
-- [ ] **T4.3.1** Install and configure `expo-notifications` with FCM/APNs.
-- [ ] **T4.3.2** Implement Supabase Edge Function to send push alerts on approval/order status changes.
-- [ ] **T4.3.3** Add "Need Help?" button launching basic phone/WhatsApp `Linking.openURL`.
+- [x] **T4.3.1** Install and configure `expo-notifications` with FCM/APNs.
+- [x] **T4.3.2** Implement Supabase Edge Function to send push alerts on approval/order status changes.
+- [x] **T4.3.3** Add "Need Help?" button launching basic phone/WhatsApp `Linking.openURL`.
 
 ---
 
