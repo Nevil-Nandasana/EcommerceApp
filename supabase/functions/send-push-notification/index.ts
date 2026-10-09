@@ -27,12 +27,39 @@ interface ExpoPushTicket {
   };
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+function getCorsHeaders(req: Request): Record<string, string> {
+  const allowedOriginEnv = Deno.env.get('ALLOWED_ORIGIN');
+  const allowedOrigins = allowedOriginEnv
+    ? allowedOriginEnv.split(',').map((o) => o.trim().toLowerCase())
+    : ['https://admin.speqtusmedical.com', 'https://app.speqtusmedical.com'];
+
+  const origin = req.headers.get('Origin');
+  let allowOrigin = allowedOrigins[0] || 'https://admin.speqtusmedical.com';
+
+  if (origin) {
+    const originLower = origin.toLowerCase();
+    if (allowedOrigins.includes(originLower) || allowedOrigins.includes('*')) {
+      allowOrigin = origin;
+    } else if (
+      originLower.endsWith('.speqtusmedical.com') ||
+      originLower.startsWith('http://localhost:') ||
+      originLower.startsWith('https://localhost:')
+    ) {
+      allowOrigin = origin;
+    }
+  }
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  };
+}
 
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // 1. Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -46,29 +73,38 @@ serve(async (req: Request) => {
     });
   }
 
-  // 2. Validate Authorization
-  const authHeader = req.headers.get('Authorization');
+  // 3. Validate Server Configuration
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
 
   if (!serviceRoleKey || !supabaseUrl) {
     return new Response(JSON.stringify({ error: 'Server configuration error' }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  // Verify secret bearer
-  if (!authHeader || !authHeader.includes(serviceRoleKey)) {
-    // If not direct service role key, check if caller is an admin user
+  // 4. Validate Authorization Header
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'Unauthorized: Missing authorization header' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  const isServiceRole = token === serviceRoleKey;
+
+  // Verify secret bearer or admin user
+  if (!isServiceRole) {
     const client = createClient(supabaseUrl, serviceRoleKey);
-    const jwt = authHeader?.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await client.auth.getUser(jwt);
+    const { data: { user }, error: userError } = await client.auth.getUser(token);
 
     if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Invalid token' }), {
         status: 401,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -81,7 +117,7 @@ serve(async (req: Request) => {
     if (profile?.role !== 'admin') {
       return new Response(JSON.stringify({ error: 'Forbidden: Admin access required' }), {
         status: 403,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
   }

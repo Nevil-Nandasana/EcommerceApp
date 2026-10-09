@@ -52,7 +52,11 @@ BEGIN
     p.image_url,
     v.art_no,
     v.size_label,
-    v.price,
+    CASE
+      WHEN auth.role() = 'authenticated' AND (public.is_approved_doctor() OR public.is_admin())
+      THEN v.price
+      ELSE NULL
+    END AS price,
     GREATEST(
       similarity(p.name, query_text),
       similarity(v.art_no, query_text),
@@ -75,4 +79,4 @@ BEGIN
   ORDER BY similarity_score DESC, p.name ASC
   LIMIT result_limit;
 END;
-$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+$$ LANGUAGE plpgsql STABLE SECURITY INVOKER;

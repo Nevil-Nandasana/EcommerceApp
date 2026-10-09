@@ -173,3 +173,21 @@ CREATE POLICY "Users read own order history"
 CREATE POLICY "System and admin insert order history"
   ON public.order_status_history FOR INSERT
   WITH CHECK (auth.uid() = changed_by OR public.is_admin());
+
+-- 12. Explicit DELETE policies for compliance and intent clarity
+CREATE POLICY "Admin delete order history"
+  ON public.order_status_history FOR DELETE
+  USING (public.is_admin());
+
+CREATE POLICY "Block direct user deletion"
+  ON public.users FOR DELETE
+  USING (false);
+
+CREATE POLICY "Block direct order deletion"
+  ON public.orders FOR DELETE
+  USING (false);
+
+CREATE POLICY "Block direct order items deletion"
+  ON public.order_items FOR DELETE
+  USING (false);
+
