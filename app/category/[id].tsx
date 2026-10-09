@@ -11,8 +11,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Image,
+  ScrollView,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/colors';
@@ -25,13 +26,17 @@ interface ProductSummary {
   name: string;
   imageUrl: string;
   variantsCount: number;
+  searchTags: string[];
 }
+
+const SPECIALTIES = ["All", "General Surgery", "Orthopedic", "Gynecology", "ENT", "Cardiovascular"];
 
 export default function CategoryProductsScreen() {
   const router = useRouter();
   const { id: categoryId, name: categoryName } = useLocalSearchParams<{ id: string; name?: string }>();
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [activeSpecialty, setActiveSpecialty] = useState<string>("All");
 
   useEffect(() => {
     const fetchCategoryProducts = async () => {
@@ -42,6 +47,7 @@ export default function CategoryProductsScreen() {
             id,
             name,
             image_url,
+            search_tags,
             product_variants ( id )
           `)
           .eq('category_id', categoryId)
@@ -59,6 +65,7 @@ export default function CategoryProductsScreen() {
               id: p.id,
               name: p.name,
               imageUrl: p.image_url,
+              searchTags: p.search_tags || [],
               variantsCount: p.product_variants?.length || 0,
             }))
           );
@@ -89,10 +96,38 @@ export default function CategoryProductsScreen() {
     );
   }
 
+  const filteredProducts = products.filter((p) => {
+    if (activeSpecialty === 'All') return true;
+    const nameLower = p.name.toLowerCase();
+    const specLower = activeSpecialty.toLowerCase();
+    
+    // Check if any search tag matches
+    if (p.searchTags.some(tag => tag.toLowerCase().includes(specLower))) {
+      return true;
+    }
+
+    if (specLower === 'general surgery') {
+      return nameLower.includes('surgery') || nameLower.includes('general') || nameLower.includes('scalpel') || nameLower.includes('forceps');
+    }
+    if (specLower === 'orthopedic') {
+      return nameLower.includes('ortho') || nameLower.includes('bone') || nameLower.includes('drill');
+    }
+    if (specLower === 'gynecology') {
+      return nameLower.includes('gyn') || nameLower.includes('speculum');
+    }
+    if (specLower === 'ent') {
+      return nameLower.includes('ear') || nameLower.includes('nose') || nameLower.includes('throat') || nameLower.includes('laryng');
+    }
+    if (specLower === 'cardiovascular') {
+      return nameLower.includes('cardio') || nameLower.includes('vascular') || nameLower.includes('vein') || nameLower.includes('artery');
+    }
+    return nameLower.includes(specLower);
+  });
+
   return (
     <View style={styles.container}>
       <FlatList
-        data={products}
+        data={filteredProducts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
@@ -105,6 +140,8 @@ export default function CategoryProductsScreen() {
             <Image
               source={{ uri: item.imageUrl || 'https://via.placeholder.com/80' }}
               style={styles.thumbnail}
+              cachePolicy="disk"
+              contentFit="cover"
             />
             <View style={styles.cardDetails}>
               <Text style={styles.productName} numberOfLines={2}>
@@ -119,18 +156,41 @@ export default function CategoryProductsScreen() {
           </TouchableOpacity>
         )}
         ListHeaderComponent={
-          categoryName ? (
-            <View style={styles.header}>
-              <Text style={styles.headerTitle}>{categoryName}</Text>
-              <Text style={styles.itemCountText}>
-                {products.length} {products.length === 1 ? 'instrument' : 'instruments'} available
-              </Text>
-            </View>
-          ) : null
+          <View style={styles.headerContainer}>
+            {categoryName && (
+              <View style={styles.header}>
+                <Text style={styles.headerTitle}>{categoryName}</Text>
+                <Text style={styles.itemCountText}>
+                  {filteredProducts.length} {filteredProducts.length === 1 ? 'instrument' : 'instruments'} available
+                </Text>
+              </View>
+            )}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              {SPECIALTIES.map((spec) => (
+                <TouchableOpacity
+                  key={spec}
+                  style={[
+                    styles.chip,
+                    activeSpecialty === spec && styles.chipActive,
+                  ]}
+                  onPress={() => setActiveSpecialty(spec)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      activeSpecialty === spec && styles.chipTextActive,
+                    ]}
+                  >
+                    {spec}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No active instruments in this section yet.</Text>
+            <Text style={styles.emptyText}>No active instruments match your criteria.</Text>
           </View>
         }
       />
@@ -165,6 +225,34 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xs,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  headerContainer: {
+    marginBottom: spacing.base,
+  },
+  chipScroll: {
+    marginTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceSubtle,
+    marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeights.medium,
+  },
+  chipTextActive: {
+    color: colors.textOnPrimary,
   },
   listContent: {
     padding: spacing.base,

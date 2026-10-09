@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  TextInput,
 } from 'react-native';
 import { ProductVariant } from '@/types';
 import { colors } from '@/constants/colors';
@@ -103,7 +104,23 @@ export const VariantRow: React.FC<VariantRowProps> = ({
           >
             <Text style={styles.stepperBtnText}>-</Text>
           </TouchableOpacity>
-          <Text style={styles.quantityText}>{quantity}</Text>
+          <TextInput
+            style={styles.quantityInput}
+            value={String(quantity)}
+            onChangeText={(val) => {
+              const clean = val.replace(/[^0-9]/g, '');
+              if (!clean) {
+                setQuantity(1);
+              } else {
+                const parsed = parseInt(clean, 10);
+                setQuantity(Math.max(1, Math.min(parsed, 999)));
+              }
+            }}
+            keyboardType="number-pad"
+            selectTextOnFocus
+            maxLength={3}
+            accessibilityLabel={`Quantity ${quantity}. Tap to edit directly.`}
+          />
           <TouchableOpacity
             onPress={increment}
             style={styles.stepperBtn}
@@ -211,6 +228,15 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
     color: colors.textPrimary,
+  },
+  quantityInput: {
+    width: 36,
+    height: 32,
+    textAlign: 'center',
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textPrimary,
+    padding: 0,
   },
   addBtn: {
     backgroundColor: colors.primary,
