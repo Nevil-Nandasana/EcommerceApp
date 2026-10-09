@@ -131,6 +131,10 @@
 - [x] **T5.F.9** Saved Sets feature (Save cart as named OT set).
 - [x] **T5.F.10** Manual PDF Invoices (Admin upload to R2).
 - [x] **T5.F.11** Self-serve Account Deletion flow (App Store requirement).
+- [x] **T5.F.12** Status Filter Tabs & Search in Doctor Orders screen.
+- [x] **T5.F.13** Reorder Price Transparency & Updated Quote Warning Modal.
+- [x] **T5.F.14** Self-serve Doctor Profile & Hospital Details Editor.
+- [x] **T5.F.15** Local Catalog Delta Caching & Fingerprint Check.
 
 ### Parking Lot (Out of Scope for now)
 - [ ] **T5.P.1** Inventory tracking & Out-of-stock logic.

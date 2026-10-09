@@ -222,12 +222,17 @@ CREATE TYPE payment_method AS ENUM (
 
 ## 5. Client State Identifiers (React Native / Expo)
 
-| State / Prop Variable | Store / Context | Type | Description |
+| State / Prop Variable | Store / Context / File | Type | Description |
 | :--- | :--- | :--- | :--- |
 | `cartItems` | `CartStore` | `CartItem[]` | Array of items currently in cart |
 | `activeCategoryId` | `CatalogContext` | `string \| null` | Currently selected surgical category ID |
-| `searchQuery` | `CatalogContext` | `string` | Search query for Art No or instrument name |
+| `searchQuery` | `CatalogContext` / `OrdersScreen` | `string` | Search query for Art No, order number, or instrument name |
+| `selectedStatus` | `OrdersScreen` | `string` | Filter tab id ('all', 'requested', 'confirmed', 'dispatched', 'delivered', 'cancelled') |
 | `currentUser` | `AuthContext` | `UserProfile \| null` | Logged-in doctor or admin profile |
+| `CATEGORIES_CACHE_KEY` | `lib/catalogCache.ts` | `string` (`speqtus_cache_categories`) | Local storage key for cached categories JSON |
+| `CATEGORIES_META_KEY` | `lib/catalogCache.ts` | `string` (`speqtus_cache_categories_meta`) | Storage key for categories fingerprint and timestamp |
+| `PRODUCTS_CACHE_PREFIX`| `lib/catalogCache.ts` | `string` (`speqtus_cache_products_`) | Key prefix for category product listing cache |
+| `PRODUCTS_META_PREFIX` | `lib/catalogCache.ts` | `string` (`speqtus_cache_products_meta_`) | Key prefix for category product fingerprint metadata |
 
 ---
 
@@ -239,3 +244,5 @@ CREATE TYPE payment_method AS ENUM (
 | 2026-10-05 | `APP_CONFIG` | Added | — | Centralized client constants config referencing registered env keys |
 | 2026-10-05 | Security Policies | Hardened | — | Migration `20261005000009_security_fixes.sql` enforcing explicit DELETE policies and search_catalog SECURITY INVOKER |
 | 2026-10-06 | Security Hardening | Hardened | — | Migration `20261006000009_security_hardening.sql` enforcing explicit DELETE policies, search_catalog SECURITY INVOKER with price masking, and Edge Function access control |
+| 2026-10-09 | 5 Boost Features | Added | — | Added `lib/catalogCache.ts` storage keys, `lib/reorderCheck.ts` diff models, and order filter tabs & search |
+| 2026-10-09 | Boost Review Fixes | Fixed | — | Corrected category cache fingerprint max timestamp reduction, reorder warning modal dismiss action on all-discontinued items, and international WhatsApp phone normalization |

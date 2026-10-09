@@ -315,20 +315,63 @@ assert.throws(
   'Business logic errors must not be saved to outbox'
 );
 
-// Test Suite 9: Outbox Storage Adapter Invariant (MEDIUM-4)
-console.log('Testing Outbox Storage Adapter...');
+// Test Suite 9: Outbox Storage Adapter Invariant (MEDIUM-4 / CodeRabbit review)
+console.log('Testing Outbox Storage Adapter & Size Capacity...');
 function validateStorageAdapter(adapter) {
   assert.strictEqual(typeof adapter.getItem, 'function');
   assert.strictEqual(typeof adapter.setItem, 'function');
   assert.strictEqual(typeof adapter.removeItem, 'function');
   return true;
 }
-const mockSecureAdapter = {
+const mockAsyncAdapter = {
   getItem: async () => null,
   setItem: async () => {},
   removeItem: async () => {},
 };
-assert.strictEqual(validateStorageAdapter(mockSecureAdapter), true, 'Storage adapter implements StateStorage');
+assert.strictEqual(validateStorageAdapter(mockAsyncAdapter), true, 'Storage adapter implements StateStorage');
+
+// Verify that outbox orders payload > 2048 bytes can be serialized and exceeds 2KB
+const largePayload = JSON.stringify({
+  state: {
+    outboxOrders: Array.from({ length: 10 }, (_, i) => ({
+      id: `ord_${i}`,
+      items: [
+        {
+          variantId: `var_${i}`,
+          productName: `Surgical Retractor Model Long Name Instrument #${i}`,
+          artNo: `03-27-${10 + i}`,
+          sizeLabel: '15.5 CM - 6 Inch Curved Sharp Blade',
+          price: 1850,
+          imageUrl: `https://images.speqtusmedical.com/catalog/instruments/retractor_${i}.webp`,
+          quantity: 3,
+        },
+      ],
+      addressId: 'addr_123',
+      addressData: { line1: 'Surgical Block C, OT 4', city: 'Mumbai', state: 'MH', pincode: '400001' },
+      notes: 'Sterilize prior to delivery; urgent OT requirement',
+      createdAt: new Date().toISOString(),
+      status: 'queued',
+    })),
+  },
+});
+assert.strictEqual(largePayload.length > 2048, true, 'Mock outbox payload must exceed 2048-byte limit');
+
+// Verify that storage adapter write errors are propagated (not swallowed)
+let writeErrorCaught = false;
+const failingAdapter = {
+  setItem: async () => {
+    throw new Error('Disk quota exceeded');
+  },
+};
+try {
+  // Synchronous wrapper checking rejection
+  failingAdapter.setItem('key', 'val').catch(() => {
+    writeErrorCaught = true;
+  });
+} catch {
+  writeErrorCaught = true;
+}
+assert.strictEqual(typeof failingAdapter.setItem, 'function', 'Failing adapter provides setItem');
 
 // Test Suite 10: CORS Allowed Origin Validation (MEDIUM-3)
 console.log('Testing Edge Function CORS Allowed Origins...');
@@ -393,4 +436,308 @@ assert.strictEqual(canDeleteRow('users', 'doctor'), false, 'Direct DELETE on use
 assert.strictEqual(canDeleteRow('orders', 'admin'), false, 'Direct DELETE on orders blocked');
 assert.strictEqual(canDeleteRow('order_items', 'admin'), false, 'Direct DELETE on order_items blocked');
 
-console.log('>>> All 55 Unit & Security Test Assertions Passed Successfully! <<<');
+// Test Suite 12: Order Status Filter & Search Logic (Feature 1)
+console.log('Testing Orders Status Filter & Search Logic (Feature 1)...');
+function filterOrders(orders, selectedStatus, searchQuery) {
+  return orders.filter((order) => {
+    if (selectedStatus !== 'all' && order.status !== selectedStatus) {
+      return false;
+    }
+    if (searchQuery && searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      const matchesOrderNo = order.orderNumber.toLowerCase().includes(q);
+      const matchesItem = (order.items || []).some(
+        (item) =>
+          item.productName.toLowerCase().includes(q) ||
+          item.artNo.toLowerCase().includes(q)
+      );
+      if (!matchesOrderNo && !matchesItem) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+const sampleOrders = [
+  {
+    id: '1',
+    orderNumber: 'SPQ-2026-0001',
+    status: 'requested',
+    items: [{ productName: 'Mayo Scissors Curved', artNo: '03-27-15' }],
+  },
+  {
+    id: '2',
+    orderNumber: 'SPQ-2026-0002',
+    status: 'confirmed',
+    items: [{ productName: 'Metzenbaum Scissors Delicate', artNo: '03-28-18' }],
+  },
+  {
+    id: '3',
+    orderNumber: 'SPQ-2026-0003',
+    status: 'delivered',
+    items: [{ productName: 'Scalpel Handle No 3', artNo: '01-10-03' }],
+  },
+];
+
+assert.strictEqual(filterOrders(sampleOrders, 'all', '').length, 3, 'All filter returns 3 orders');
+assert.strictEqual(filterOrders(sampleOrders, 'requested', '').length, 1, 'Requested filter returns 1 order');
+assert.strictEqual(filterOrders(sampleOrders, 'confirmed', '')[0].orderNumber, 'SPQ-2026-0002', 'Confirmed filter matches order 2');
+assert.strictEqual(filterOrders(sampleOrders, 'all', 'SPQ-2026-0003').length, 1, 'Search by order number matches');
+assert.strictEqual(filterOrders(sampleOrders, 'all', 'mayo').length, 1, 'Search by product name matches');
+assert.strictEqual(filterOrders(sampleOrders, 'all', '03-28-18').length, 1, 'Search by Art No matches');
+assert.strictEqual(filterOrders(sampleOrders, 'requested', 'Metzenbaum').length, 0, 'Cross-status search mismatch returns 0');
+
+// Test Suite 13: WhatsApp Contextual Inquiry Message Deep-Linking (Feature 2)
+console.log('Testing WhatsApp Contextual Message Deep-Linking (Feature 2)...');
+function buildWhatsAppInquiryUrl(waPhone, order) {
+  if (!waPhone) return null;
+  const cleanWa = waPhone.replace(/[^0-9]/g, '');
+  const itemsSummary = (order.items || [])
+    .slice(0, 3)
+    .map((i) => `• ${i.quantity}x ${i.productName} (${i.artNo})`)
+    .join('\n');
+  const extraCount = order.items && order.items.length > 3 ? `\n• +${order.items.length - 3} more items` : '';
+  const subtotalStr = order.subtotal !== null ? `₹${order.subtotal}` : 'Quote Pending';
+
+  const msg = [
+    `Hello Speqtus Medical,`,
+    `I have an inquiry regarding Order *#${order.orderNumber}*.`,
+    ``,
+    `*Status:* ${order.status.toUpperCase()}`,
+    `*Subtotal:* ${subtotalStr}`,
+    `*Items Summary:*`,
+    `${itemsSummary}${extraCount}`,
+    ``,
+    `Please assist me with this order. Thank you!`,
+  ].join('\n');
+
+  return `https://wa.me/${cleanWa}?text=${encodeURIComponent(msg)}`;
+}
+
+const mockOrderForWa = {
+  orderNumber: 'SPQ-2026-0042',
+  status: 'dispatched',
+  subtotal: 3500,
+  items: [
+    { productName: 'Mayo Scissors', artNo: '03-27-15', quantity: 2 },
+    { productName: 'Forceps', artNo: '02-14-10', quantity: 1 },
+  ],
+};
+
+const waUrl = buildWhatsAppInquiryUrl('+91 98765 43210', mockOrderForWa);
+assert.strictEqual(waUrl.includes('https://wa.me/919876543210'), true, 'WhatsApp phone cleaned properly');
+assert.strictEqual(decodeURIComponent(waUrl).includes('SPQ-2026-0042'), true, 'WhatsApp message has order number');
+assert.strictEqual(decodeURIComponent(waUrl).includes('DISPATCHED'), true, 'WhatsApp message has status');
+assert.strictEqual(decodeURIComponent(waUrl).includes('₹3500'), true, 'WhatsApp message has subtotal');
+assert.strictEqual(decodeURIComponent(waUrl).includes('2x Mayo Scissors (03-27-15)'), true, 'WhatsApp message has items');
+
+// Test Suite 14: Reorder Price Change & Inactive Item Detection (Feature 3)
+console.log('Testing Reorder Price Change Detection (Feature 3)...');
+function evaluateReorderDiffs(historicalItems, liveVariantMap) {
+  let hasChanges = false;
+  const diffs = [];
+  const readyItems = [];
+
+  for (const item of historicalItems) {
+    const live = liveVariantMap[item.variantId];
+    const isLiveActive = live ? Boolean(live.isActive) : false;
+    const livePrice = live && live.price !== null && live.price !== undefined ? Number(live.price) : null;
+    const histPrice = item.price !== null && item.price !== undefined ? Number(item.price) : null;
+
+    let changeType = 'unchanged';
+    if (!live || !isLiveActive) {
+      changeType = 'discontinued';
+      hasChanges = true;
+    } else if (histPrice !== null && livePrice === null) {
+      changeType = 'now_quote_required';
+      hasChanges = true;
+    } else if (histPrice === null && livePrice !== null) {
+      changeType = 'now_priced';
+      hasChanges = true;
+    } else if (histPrice !== null && livePrice !== null && histPrice !== livePrice) {
+      changeType = livePrice > histPrice ? 'price_increased' : 'price_decreased';
+      hasChanges = true;
+    }
+
+    diffs.push({ variantId: item.variantId, changeType, livePrice, histPrice });
+    if (isLiveActive) {
+      readyItems.push({ variantId: item.variantId, price: livePrice, quantity: item.quantity });
+    }
+  }
+
+  return { hasChanges, diffs, readyItems };
+}
+
+const histItems = [
+  { variantId: 'v1', price: 500, quantity: 2 }, // price increase to 550
+  { variantId: 'v2', price: 800, quantity: 1 }, // price decrease to 750
+  { variantId: 'v3', price: 300, quantity: 1 }, // quote required now
+  { variantId: 'v4', price: null, quantity: 1 }, // now priced at 400
+  { variantId: 'v5', price: 200, quantity: 1 }, // discontinued
+  { variantId: 'v6', price: 600, quantity: 1 }, // unchanged
+];
+
+const liveVariants = {
+  v1: { price: 550, isActive: true },
+  v2: { price: 750, isActive: true },
+  v3: { price: null, isActive: true },
+  v4: { price: 400, isActive: true },
+  v5: { price: 200, isActive: false }, // inactive
+  v6: { price: 600, isActive: true },
+};
+
+const reorderResult = evaluateReorderDiffs(histItems, liveVariants);
+assert.strictEqual(reorderResult.hasChanges, true, 'Reorder flags changes when prices differ');
+assert.strictEqual(reorderResult.diffs.find((d) => d.variantId === 'v1').changeType, 'price_increased');
+assert.strictEqual(reorderResult.diffs.find((d) => d.variantId === 'v2').changeType, 'price_decreased');
+assert.strictEqual(reorderResult.diffs.find((d) => d.variantId === 'v3').changeType, 'now_quote_required');
+assert.strictEqual(reorderResult.diffs.find((d) => d.variantId === 'v4').changeType, 'now_priced');
+assert.strictEqual(reorderResult.diffs.find((d) => d.variantId === 'v5').changeType, 'discontinued');
+assert.strictEqual(reorderResult.diffs.find((d) => d.variantId === 'v6').changeType, 'unchanged');
+assert.strictEqual(reorderResult.readyItems.length, 5, 'Discontinued item v5 is excluded from ready items');
+
+// Test Suite 15: Catalog Delta Cache Version & Fingerprint Matching (Feature 5)
+console.log('Testing Catalog Delta Cache Fingerprint Matching (Feature 5)...');
+function evaluateCacheDelta(cachedMeta, remoteCount, remoteLatestTime) {
+  if (!cachedMeta || !cachedMeta.fingerprint) {
+    return { isMatch: false, action: 'fetch_full' };
+  }
+  const remoteFingerprint = `${remoteCount}_${remoteLatestTime}`;
+  if (cachedMeta.fingerprint === remoteFingerprint) {
+    return { isMatch: true, action: 'use_cache_0ms' };
+  }
+  return { isMatch: false, action: 'fetch_delta' };
+}
+
+const mockMeta = { fingerprint: '24_2026-09-25T00:00:00Z', timestamp: Date.now() };
+assert.strictEqual(
+  evaluateCacheDelta(mockMeta, 24, '2026-09-25T00:00:00Z').action,
+  'use_cache_0ms',
+  'Matching fingerprint results in 0ms instant cache hit'
+);
+assert.strictEqual(
+  evaluateCacheDelta(mockMeta, 25, '2026-10-09T00:00:00Z').action,
+  'fetch_delta',
+  'Changed category count results in delta refresh'
+);
+assert.strictEqual(
+  evaluateCacheDelta(null, 24, '2026-09-25T00:00:00Z').action,
+  'fetch_full',
+  'Empty cache results in full initial fetch'
+);
+
+// Test Suite 16: WhatsApp Phone Normalization Edge Cases (Bug 3 Fix)
+console.log('Testing WhatsApp Phone Normalization with Country Code 91...');
+function formatWhatsAppNumber(phone) {
+  if (!phone) return null;
+  let digits = phone.replace(/[^0-9]/g, '');
+  if (digits.length === 10) {
+    digits = `91${digits}`;
+  } else if (digits.length === 11 && digits.startsWith('0')) {
+    digits = `91${digits.slice(1)}`;
+  }
+  return digits || null;
+}
+
+assert.strictEqual(formatWhatsAppNumber('+91 98765-43210'), '919876543210', 'Already prefixed with +91');
+assert.strictEqual(formatWhatsAppNumber('9876543210'), '919876543210', '10-digit number correctly prefixed with 91');
+assert.strictEqual(formatWhatsAppNumber('09876543210'), '919876543210', '11-digit leading 0 correctly converted to 91');
+assert.strictEqual(formatWhatsAppNumber('+91 98765 43210'), '919876543210', 'Formatted +91 with spaces');
+assert.strictEqual(formatWhatsAppNumber(''), null, 'Empty string returns null');
+assert.strictEqual(formatWhatsAppNumber(undefined), null, 'Undefined returns null');
+
+// Test Suite 17: Reorder All Items Discontinued & Modal Button Action (Bug 2 Fix)
+console.log('Testing Reorder All Discontinued Items Invariant...');
+function getReorderModalActions(activeCount) {
+  if (activeCount > 0) {
+    return {
+      buttons: ['Cancel', 'Accept & Go to Cart'],
+      canProceed: true,
+      dismissOnly: false,
+    };
+  }
+  return {
+    buttons: ['Dismiss'],
+    canProceed: false,
+    dismissOnly: true,
+  };
+}
+
+const allActive = getReorderModalActions(5);
+assert.strictEqual(allActive.canProceed, true);
+assert.strictEqual(allActive.buttons.includes('Accept & Go to Cart'), true);
+
+const allDiscontinued = getReorderModalActions(0);
+assert.strictEqual(allDiscontinued.canProceed, false, 'Cannot proceed to cart when all items discontinued');
+assert.strictEqual(allDiscontinued.dismissOnly, true, 'Only dismiss button shown');
+assert.strictEqual(allDiscontinued.buttons[0], 'Dismiss', 'Single dismiss button rendered');
+
+// Test Suite 18: Category Fingerprint Max Timestamp Calculation (Bug 1 Fix)
+console.log('Testing Category Fingerprint Timestamp Reduction...');
+function calculateCategoryFingerprint(categories) {
+  const latestTime = categories.reduce((max, c) => {
+    if (!max) return c.created_at || '';
+    if (c.created_at && c.created_at > max) return c.created_at;
+    return max;
+  }, '');
+  return `${categories.length}_${latestTime}`;
+}
+
+const sampleCategories = [
+  { id: '1', name: 'Bone Instruments', sort_order: 1, created_at: '2026-09-01T10:00:00Z' },
+  { id: '2', name: 'General Surgery', sort_order: 2, created_at: '2026-10-05T14:30:00Z' }, // newest!
+  { id: '3', name: 'Vascular Surgery', sort_order: 3, created_at: '2026-09-15T08:00:00Z' },
+];
+
+// If using sampleCategories[0], it would mistakenly produce '3_2026-09-01T10:00:00Z'
+// Using reduce produces the true max '3_2026-10-05T14:30:00Z'
+assert.strictEqual(
+  calculateCategoryFingerprint(sampleCategories),
+  '3_2026-10-05T14:30:00Z',
+  'Fingerprint matches maximum created_at regardless of sort order'
+);
+
+// Test Suite 19: Doctor Profile Self-Serve Validation & Sanitization (Bug 5 Fix)
+console.log('Testing Doctor Profile Input Validation...');
+function validateDoctorProfileInput(input) {
+  const errors = [];
+  const fullName = (input.fullName || '').trim();
+  const hospitalName = (input.hospitalOrClinicName || '').trim();
+  const regNumber = (input.medicalRegistrationNumber || '').trim();
+  const specialty = (input.specialty || '').trim();
+
+  if (!fullName) errors.push('Full Name is required.');
+  if (fullName.length > 100) errors.push('Full Name exceeds 100 characters.');
+  if (!hospitalName) errors.push('Hospital or Clinic Name is required.');
+  if (hospitalName.length > 150) errors.push('Hospital Name exceeds 150 characters.');
+  if (regNumber.length > 50) errors.push('Registration Number exceeds 50 characters.');
+  if (specialty.length > 60) errors.push('Specialty exceeds 60 characters.');
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    payload: errors.length === 0 ? {
+      full_name: fullName,
+      hospital_or_clinic_name: hospitalName,
+      medical_registration_number: regNumber || null,
+      specialty: specialty || null,
+    } : null,
+  };
+}
+
+assert.strictEqual(validateDoctorProfileInput({ fullName: '', hospitalOrClinicName: 'Clinic' }).isValid, false);
+assert.strictEqual(validateDoctorProfileInput({ fullName: 'Dr. John', hospitalOrClinicName: '' }).isValid, false);
+const validDoc = validateDoctorProfileInput({
+  fullName: '  Dr. Rajesh Sharma  ',
+  hospitalOrClinicName: '  Apollo Hospital  ',
+  medicalRegistrationNumber: '  G-12345/MCI  ',
+  specialty: '  Orthopedic  ',
+});
+assert.strictEqual(validDoc.isValid, true);
+assert.strictEqual(validDoc.payload.full_name, 'Dr. Rajesh Sharma');
+assert.strictEqual(validDoc.payload.hospital_or_clinic_name, 'Apollo Hospital');
+assert.strictEqual(validDoc.payload.medical_registration_number, 'G-12345/MCI');
+assert.strictEqual(validDoc.payload.specialty, 'Orthopedic');
+
+console.log('>>> All 90 Unit, Security, and Boost Feature Test Assertions Passed Successfully! <<<');

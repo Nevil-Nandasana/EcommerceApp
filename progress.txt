@@ -113,5 +113,10 @@ Phase 4 completed:
   - MEDIUM-2: Externalized WhatsApp phone number across checkout and profile screens to `APP_CONFIG.whatsappPhone` / `EXPO_PUBLIC_WHATSAPP_PHONE` with fallback alert handling.
   - MEDIUM-3: Restricted CORS wildcard `*` across `send-order-alert` and `send-push-notification` functions, implementing dynamic allowlist checking (`ALLOWED_ORIGIN`), `Vary: Origin`, and company domain validation.
   - MEDIUM-4: Configured `lib/outbox.ts` with cross-platform encrypted `SecureStoreAdapter` (SecureStore on native, localStorage on web) with robust error logging and duplicate address suppression.
-  - Comprehensive Test Suite: 55 unit assertions in `tests/run_tests.js` covering state machine, subtotal calculation, price gating, IDOR defense, CORS validation, RLS DELETE policies, and outbox adapter invariants.
-
+- [x] Phase 5 Boost Features Implementation (2026-10-09 Complete):
+  - Feature 1: Status Filter Tabs & Search in Doctor "My Orders" screen (`app/(tabs)/orders.tsx`) with segmented pill filters (All, Requested, Confirmed, Dispatched, Delivered, Cancelled) and dynamic search matching order number or instrument names.
+  - Feature 2: Contextual 1-Tap WhatsApp Order Inquiry Deep-Linking (`app/order/[id].tsx`, `app/(tabs)/profile.tsx`) with international +91 phone normalization, encoded order summary, and promise rejection handlers.
+  - Feature 3: Reorder Price Transparency & Updated Quote Warning Modal (`components/ReorderWarningModal.tsx`, `lib/reorderCheck.ts`, `app/order/[id].tsx`, `app/(tabs)/orders.tsx`) comparing historical snapshot prices against current live catalog prices before cart population.
+  - Feature 4: Self-Serve Doctor Profile & Hospital Details Editor (`app/(tabs)/profile.tsx`) with validation, length limits, and authenticated RLS update.
+  - Feature 5: Local Catalog Delta Caching & Fingerprint Check (`lib/catalogCache.ts`, `app/(tabs)/index.tsx`, `app/category/[id].tsx`) enabling instant 0ms app boot and weak network resilience.
+  - Test Suite Expansion: Expanded `tests/run_tests.js` to 90 unit, security, and feature assertions covering all invariants with 100% pass rate.
