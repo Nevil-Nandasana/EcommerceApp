@@ -18,6 +18,14 @@ export interface Category {
   createdAt: string;
 }
 
+export interface ProductSummary {
+  id: string;
+  name: string;
+  imageUrl: string;
+  variantsCount: number;
+  searchTags: string[];
+}
+
 export interface Product {
   id: string;
   categoryId: string;

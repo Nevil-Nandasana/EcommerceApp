@@ -3,7 +3,7 @@
  * Displays 24 surgical categories, banner categories, and pending approval banner.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,11 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
 import { Category } from '@/types';
 import { CategoryCard } from '@/components/CategoryCard';
 import { PendingBanner } from '@/components/PendingBanner';
 import { useAuth } from '@/lib/auth';
+import { fetchCategoriesWithCache, getCachedCategories } from '@/lib/catalogCache';
 import { colors } from '@/constants/colors';
 import { spacing, typography } from '@/constants/theme';
 import { strings } from '@/constants/strings';
@@ -30,46 +30,36 @@ export default function CatalogIndexScreen() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  const fetchCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('sort_order', { ascending: true })
-        .order('name', { ascending: true });
-
-      if (error) {
-        logger.error('CatalogIndex', 'Failed to fetch categories', error);
-        return;
+  const loadCategories = useCallback(async (forceRefresh: boolean = false) => {
+    // Instant 0ms load from local disk cache if available
+    if (!forceRefresh) {
+      const cached = await getCachedCategories();
+      if (cached && cached.length > 0) {
+        setCategories(cached);
+        setIsLoading(false);
       }
+    }
 
-      if (data) {
-        setCategories(
-          data.map((c) => ({
-            id: c.id,
-            name: c.name,
-            parentCategory: c.parent_category,
-            sortOrder: c.sort_order,
-            slug: c.slug,
-            createdAt: c.created_at,
-          }))
-        );
+    try {
+      const { data } = await fetchCategoriesWithCache(forceRefresh);
+      if (data && data.length > 0) {
+        setCategories(data);
       }
     } catch (err) {
-      logger.error('CatalogIndex', 'Unexpected error', err);
+      logger.error('CatalogIndex', 'Unexpected error loading categories', err);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchCategories();
-  }, []);
+    loadCategories(false);
+  }, [loadCategories]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    fetchCategories();
+    loadCategories(true);
   };
 
   const handleSelectCategory = (cat: Category) => {

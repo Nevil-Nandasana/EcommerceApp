@@ -3,7 +3,7 @@
  * Virtualized product listing with size count badges and image thumbnails.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,22 +12,16 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
+import { ProductSummary } from '@/types';
+import { fetchCategoryProductsWithCache, getCachedCategoryProducts } from '@/lib/catalogCache';
 import { colors } from '@/constants/colors';
 import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 import { logger } from '@/lib/logger';
-
-interface ProductSummary {
-  id: string;
-  name: string;
-  imageUrl: string;
-  variantsCount: number;
-  searchTags: string[];
-}
 
 const SPECIALTIES = ["All", "General Surgery", "Orthopedic", "Gynecology", "ENT", "Cardiovascular"];
 
@@ -36,49 +30,45 @@ export default function CategoryProductsScreen() {
   const { id: categoryId, name: categoryName } = useLocalSearchParams<{ id: string; name?: string }>();
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [activeSpecialty, setActiveSpecialty] = useState<string>("All");
 
-  useEffect(() => {
-    const fetchCategoryProducts = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .select(`
-            id,
-            name,
-            image_url,
-            search_tags,
-            product_variants ( id )
-          `)
-          .eq('category_id', categoryId)
-          .eq('is_active', true)
-          .order('name', { ascending: true });
+  const loadProducts = useCallback(
+    async (forceRefresh: boolean = false) => {
+      if (!categoryId) return;
 
-        if (error) {
-          logger.error('CategoryProducts', 'Failed to fetch products', error);
-          return;
+      // Instant 0ms load from local disk cache if available
+      if (!forceRefresh) {
+        const cached = await getCachedCategoryProducts(categoryId);
+        if (cached && cached.length > 0) {
+          setProducts(cached);
+          setIsLoading(false);
         }
+      }
 
-        if (data) {
-          setProducts(
-            data.map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              imageUrl: p.image_url,
-              searchTags: p.search_tags || [],
-              variantsCount: p.product_variants?.length || 0,
-            }))
-          );
+      try {
+        const { data } = await fetchCategoryProductsWithCache(categoryId, forceRefresh);
+        if (data && data.length > 0) {
+          setProducts(data);
         }
       } catch (err) {
-        logger.error('CategoryProducts', 'Unexpected error', err);
+        logger.error('CategoryProducts', 'Failed to load products', err);
       } finally {
         setIsLoading(false);
+        setIsRefreshing(false);
       }
-    };
+    },
+    [categoryId]
+  );
 
-    fetchCategoryProducts();
-  }, [categoryId]);
+  useEffect(() => {
+    loadProducts(false);
+  }, [loadProducts]);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    loadProducts(true);
+  };
 
   const handleSelectProduct = (productId: string) => {
     router.push({
@@ -130,6 +120,13 @@ export default function CategoryProductsScreen() {
         data={filteredProducts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary]}
+          />
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
