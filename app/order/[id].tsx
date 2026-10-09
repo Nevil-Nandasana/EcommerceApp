@@ -23,7 +23,10 @@ import { useCartStore } from '@/lib/cart';
 import { useAuth } from '@/lib/auth';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/Button';
-import { OrderStatus } from '@/types';
+import { ReorderWarningModal } from '@/components/ReorderWarningModal';
+import { OrderStatus, CartItem } from '@/types';
+import { APP_CONFIG } from '@/constants/config';
+import { checkReorderPriceChanges, ReorderItemDiff } from '@/lib/reorderCheck';
 import { colors } from '@/constants/colors';
 import { spacing, typography, borderRadius } from '@/constants/theme';
 import { strings } from '@/constants/strings';
@@ -83,6 +86,14 @@ export default function OrderDetailScreen() {
   const [isCancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOtherText, setCancelOtherText] = useState('');
+
+  // Reorder Price Transparency State (Feature 3)
+  const [isCheckingReorder, setIsCheckingReorder] = useState(false);
+  const [reorderModalVisible, setReorderModalVisible] = useState(false);
+  const [reorderDiffs, setReorderDiffs] = useState<ReorderItemDiff[]>([]);
+  const [reorderItemsToAdd, setReorderItemsToAdd] = useState<
+    Array<{ item: Omit<CartItem, 'quantity'>; quantity: number }>
+  >([]);
 
   const fetchOrderDetails = async () => {
     if (!orderId) return;
@@ -241,32 +252,82 @@ export default function OrderDetailScreen() {
     }
   };
 
-  const handleReorder = () => {
+  const handleReorder = async () => {
     if (!order) return;
-    order.items.forEach((item) => {
-      addItemToCart(
-        {
-          variantId: item.variantId,
-          productId: '',
-          productName: item.productName,
-          categoryName: 'Reordered Instruments',
-          artNo: item.artNo,
-          sizeLabel: item.sizeLabel,
-          price: item.unitPrice,
-          imageUrl: item.imageUrl,
-        },
-        item.quantity
-      );
+    if (!order.items || order.items.length === 0) {
+      Alert.alert('Empty Order', 'This order contains no items to reorder.');
+      return;
+    }
+    setIsCheckingReorder(true);
+    try {
+      const sourceItems = order.items.map((item) => ({
+        variantId: item.variantId,
+        productName: item.productName,
+        artNo: item.artNo,
+        sizeLabel: item.sizeLabel,
+        price: item.unitPrice,
+        imageUrl: item.imageUrl,
+        quantity: item.quantity,
+      }));
+
+      const result = await checkReorderPriceChanges(sourceItems);
+      if (result.hasChanges) {
+        setReorderDiffs(result.diffs);
+        setReorderItemsToAdd(result.itemsReadyForCart);
+        setReorderModalVisible(true);
+      } else {
+        result.itemsReadyForCart.forEach(({ item, quantity }) => {
+          addItemToCart(item, quantity);
+        });
+        Alert.alert(
+          'Reorder Cart Ready',
+          `${result.itemsReadyForCart.length} items added to your cart with verified pricing.`,
+          [
+            { text: 'Go to Cart', onPress: () => router.push('/(tabs)/cart') },
+            { text: 'OK', style: 'cancel' },
+          ]
+        );
+      }
+    } catch (err) {
+      logger.error('OrderDetail', 'Reorder check error', err);
+      // Fallback: direct addition
+      order.items.forEach((item) => {
+        addItemToCart(
+          {
+            variantId: item.variantId,
+            productId: '',
+            productName: item.productName,
+            categoryName: 'Reordered Instruments',
+            artNo: item.artNo,
+            sizeLabel: item.sizeLabel,
+            price: item.unitPrice,
+            imageUrl: item.imageUrl,
+          },
+          item.quantity
+        );
+      });
+      router.push('/(tabs)/cart');
+    } finally {
+      setIsCheckingReorder(false);
+    }
+  };
+
+  const confirmReorderModal = () => {
+    if (reorderItemsToAdd.length === 0) {
+      setReorderModalVisible(false);
+      Alert.alert('Unavailable', 'No available items to add to cart from this order.');
+      return;
+    }
+    reorderItemsToAdd.forEach(({ item, quantity }) => {
+      addItemToCart(item, quantity);
     });
-    Alert.alert('Reorder Cart Ready', `${order.items.length} items added to your cart.`, [
-      { text: 'Go to Cart', onPress: () => router.push('/(tabs)/cart') },
-      { text: 'OK', style: 'cancel' },
-    ]);
+    setReorderModalVisible(false);
+    router.push('/(tabs)/cart');
   };
 
   const handleSupportWhatsApp = () => {
     if (!order) return;
-    const waPhone = process.env.EXPO_PUBLIC_WHATSAPP_PHONE || process.env.EXPO_PUBLIC_SUPPORT_PHONE;
+    const waPhone = APP_CONFIG.whatsappPhone || APP_CONFIG.supportPhone;
     if (!waPhone) {
       Alert.alert(
         'Customer Support',
@@ -274,11 +335,43 @@ export default function OrderDetailScreen() {
       );
       return;
     }
-    const cleanWa = waPhone.replace(/[^0-9]/g, '');
-    const msg = encodeURIComponent(
-      `Hello Speqtus Medical, I have a question regarding order #${order.orderNumber}.`
-    );
-    Linking.openURL(`https://wa.me/${cleanWa}?text=${msg}`);
+    let cleanWa = waPhone.replace(/[^0-9]/g, '');
+    if (cleanWa.length === 10) {
+      cleanWa = `91${cleanWa}`;
+    } else if (cleanWa.length === 11 && cleanWa.startsWith('0')) {
+      cleanWa = `91${cleanWa.slice(1)}`;
+    }
+    if (!cleanWa) {
+      Alert.alert('Customer Support', 'Invalid WhatsApp support phone configuration.');
+      return;
+    }
+    const itemsSummary = order.items
+      .slice(0, 3)
+      .map((i) => `• ${i.quantity}x ${i.productName} (${i.artNo})`)
+      .join('\n');
+    const extraCount = order.items.length > 3 ? `\n• +${order.items.length - 3} more items` : '';
+    const subtotalStr =
+      order.subtotal !== null
+        ? `₹${order.subtotal.toLocaleString('en-IN')}`
+        : 'Quote Pending';
+
+    const msg = [
+      `Hello Speqtus Medical,`,
+      `I have an inquiry regarding Order *#${order.orderNumber}*.`,
+      ``,
+      `*Status:* ${order.status.toUpperCase()}`,
+      `*Subtotal:* ${subtotalStr}`,
+      `*Items Summary:*`,
+      `${itemsSummary}${extraCount}`,
+      ``,
+      `Please assist me with this order. Thank you!`,
+    ].join('\n');
+
+    const url = `https://wa.me/${cleanWa}?text=${encodeURIComponent(msg)}`;
+    Linking.openURL(url).catch((err) => {
+      logger.error('OrderDetail', 'Failed to open WhatsApp URL', err);
+      Alert.alert('Cannot Open WhatsApp', 'Please ensure WhatsApp is installed on your device.');
+    });
   };
 
   if (isLoading) {
@@ -493,9 +586,10 @@ export default function OrderDetailScreen() {
           onPress={handleReorder}
           variant="secondary"
           style={styles.actionBtn}
+          loading={isCheckingReorder}
         />
         <Button
-          title="Ask Question on WhatsApp"
+          title="Inquire on WhatsApp 💬"
           onPress={handleSupportWhatsApp}
           variant="outline"
           style={styles.actionBtn}
@@ -563,6 +657,15 @@ export default function OrderDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Reorder Price Transparency Warning Modal (Feature 3) */}
+      <ReorderWarningModal
+        visible={reorderModalVisible}
+        orderNumber={order?.orderNumber}
+        diffs={reorderDiffs}
+        onCancel={() => setReorderModalVisible(false)}
+        onConfirm={confirmReorderModal}
+      />
     </ScrollView>
   );
 }
