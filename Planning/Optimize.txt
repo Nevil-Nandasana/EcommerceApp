@@ -1,0 +1,8 @@
+how to optimize this application. ?
+
+the requirements are we have 50 or so users and we would require to implement this application with the render ram of 512mb and 1cpu core. as we would be using the free tier of the platform. and we have two options .
+
+first is that we would setup a loadbalancer and 2 render backends.
+second option is that we would send a request asking if there are any changes to the catalogue of the application if yes then we would send a new request to fetch all the new changes. and if multiple clients request the changes then we would use the queue procedure to make a list of the clients and send them the changes in the orderly fashion like the client with the most orders and most profitable client would get the catalogue in earliest and the ones who have application or website just installed in thier phones would get the request according to their order in the queue.
+
+which of this two options we would use and why also i am all ears to any of the other optimizing options which we could use.

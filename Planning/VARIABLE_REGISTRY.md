@@ -212,6 +212,11 @@ CREATE TYPE payment_method AS ENUM (
 | `R2_SECRET_ACCESS_KEY` | Storage / Edge Functions | Yes | Cloudflare R2 secret key |
 | `R2_BUCKET_NAME` | Storage / Edge Functions | Yes | Speqtus product image bucket |
 | `R2_PUBLIC_URL_PREFIX` | Client / Web | Yes | Public CDN URL prefix for catalog image delivery |
+| `EXPO_PUBLIC_WHATSAPP_PHONE` | Client (Expo / Web) | No | WhatsApp business ordering phone number for offline checkout |
+| `EXPO_PUBLIC_SUPPORT_PHONE` | Client (Expo / Web) | No | Direct telephone support contact phone number for doctors |
+| `RESEND_API_KEY` | Backend / Edge Functions | Yes | Resend API key for transactional email alerts |
+| `OWNER_EMAIL` | Backend / Edge Functions | Yes | Destination email address for new order notification alerts |
+| `ALLOWED_ORIGIN` | Backend / Edge Functions | No | Restricts CORS Access-Control-Allow-Origin header (defaults to admin domain) |
 
 ---
 
@@ -231,3 +236,6 @@ CREATE TYPE payment_method AS ENUM (
 | Date | Identifier | Action | Replacement | Reason / Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | 2026-09-24 | Initial Registry | Created | — | Initialized from PRD Section 3 and AGENTS.md rules |
+| 2026-10-05 | `APP_CONFIG` | Added | — | Centralized client constants config referencing registered env keys |
+| 2026-10-05 | Security Policies | Hardened | — | Migration `20261005000009_security_fixes.sql` enforcing explicit DELETE policies and search_catalog SECURITY INVOKER |
+| 2026-10-06 | Security Hardening | Hardened | — | Migration `20261006000009_security_hardening.sql` enforcing explicit DELETE policies, search_catalog SECURITY INVOKER with price masking, and Edge Function access control |

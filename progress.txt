@@ -73,3 +73,45 @@
 - Fixed ESLint 9 `'_e' is defined but never used` in `lib/notifications.ts` by adopting optional catch binding `catch` and adding `caughtErrorsIgnorePattern: '^_'` to `eslint.config.mjs` and `.eslintrc.json`.
 - Configured Expo Web runtime dependencies: added `react-native-web` (`~0.19.13`) and `react-dom` (`18.3.1`) to `package.json`, synchronized `package-lock.json`, and satisfied Expo Web prerequisites in `node_modules/react-native-web`.
 
+## Phase 5: Privacy & Compliance [COMPLETED]
+- Migration 7 (`20261001000007_delete_user_account_rpc.sql`): Added `delete_user_account` RPC to securely anonymize orders, clear addresses, and delete the user account in compliance with GDPR/DPDP Act.
+- `app/(tabs)/profile.tsx`: Added "Delete My Account" button and two-step confirmation alert, successfully invoking the `delete_user_account` RPC and signing out.
+- `app/checkout.tsx`: Added PHI (Patient Health Information) warning text underneath the order notes input to prevent accidental inclusion of patient data.
+- `public/privacy.html`: Created a static Privacy Policy page documenting data collection, processors, and erasure rights.
+- `public/delete-account.html`: Created a static Account Deletion instructions page with direct email contact options for App Store/Google Play requirements.
+
+## Phase 6 - Offline Resilience [COMPLETED]
+- Replaced React Native `Image` with `expo-image` across product listings and details for disk caching (`cachePolicy="disk"`, `contentFit="cover"`).
+- Implemented `lib/imageCache.ts` with silent pre-fetching logic.
+- Triggered background catalog thumbnail pre-fetching in `app/_layout.tsx` for approved users.
+- Created `lib/outbox.ts` Zustand store (with AsyncStorage persistence) for offline order queues.
+- Handled network connectivity offline scenarios in `app/checkout.tsx` with Store-and-Forward UI pattern.
+- Displayed queued requests securely at the top of the order list in `app/(tabs)/orders.tsx` with sync badges.
+- Implemented global `networkSync.ts` in root layout to automatically flush outbox when the device reconnects to the internet.
+- Added 1-tap WhatsApp Emergency Fallback button during offline capturing to provide robust redundant ordering.
+
+Phase 4 completed:
+- Added send-order-alert Edge Function and hooked it up to checkout and outbox.
+- Created seed_catalog.py for data seeding (T1.2.1).
+- Implemented Saved Sets UI (T5.F.9).
+- Implemented Address Book Management (T5.F.3).
+- Implemented Structured Delivery Tracking / Courier Info (T5.F.8).
+- Implemented Admin Doctor Directory (T5.F.7).
+- Implemented Doctor Order Cancellation Flow (T5.F.6).
+- [x] Implemented Persistent Offline Status Banner (T5.F.2).
+- [x] Implemented Catalog Specialty Chips & Filter (T5.F.4).
+- [x] Implemented Numeric Keypad entry for cart bulk additions (T5.F.5).
+- [x] Implemented Manual PDF Invoices attach & Doctor download (T5.F.10).
+- [x] Implemented Admin Order Export to CSV (T5.P.3).
+- [x] Phase 6 & 7: T6.2 (EAS Profiles) and T7.1 (Operations Runbook) completed.
+- [x] Security Hardening & Remediation (Audit 2026-10-06 Complete):
+  - CRITICAL-1: Hardened send-order-alert Edge Function to enforce strict approval status (`approval_status === 'approved'`), scope queries to caller to eliminate IDOR enumeration oracle, and authenticate service role / admin JWTs.
+  - CRITICAL-2: Completely removed direct insert fallback in `app/checkout.tsx`; only `submit_order` RPC is executed, and network-interrupted submissions route safely to offline encrypted outbox.
+  - HIGH-1: Migration `20261006000009_security_hardening.sql` defines `search_catalog` as `SECURITY INVOKER` with explicit caller-context price masking (`auth.role() = 'authenticated' AND (is_approved_doctor() OR is_admin())`).
+  - HIGH-2 & HIGH-3: Explicit DELETE policies implemented for `order_status_history` (`is_admin()`), and explicit `USING (false)` blocks for direct deletions on `users`, `orders`, and `order_items`.
+  - MEDIUM-1: Verified `app/admin/_layout.tsx` never mounts the navigation `<Stack>` during loading or for unauthorized users, rendering loading / access-denied views instead.
+  - MEDIUM-2: Externalized WhatsApp phone number across checkout and profile screens to `APP_CONFIG.whatsappPhone` / `EXPO_PUBLIC_WHATSAPP_PHONE` with fallback alert handling.
+  - MEDIUM-3: Restricted CORS wildcard `*` across `send-order-alert` and `send-push-notification` functions, implementing dynamic allowlist checking (`ALLOWED_ORIGIN`), `Vary: Origin`, and company domain validation.
+  - MEDIUM-4: Configured `lib/outbox.ts` with cross-platform encrypted `SecureStoreAdapter` (SecureStore on native, localStorage on web) with robust error logging and duplicate address suppression.
+  - Comprehensive Test Suite: 55 unit assertions in `tests/run_tests.js` covering state machine, subtotal calculation, price gating, IDOR defense, CORS validation, RLS DELETE policies, and outbox adapter invariants.
+

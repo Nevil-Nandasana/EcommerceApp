@@ -121,21 +121,21 @@
 
 ### Fast-Follow Tasks
 - [ ] **T5.F.1** Staging Environment & Sentry error tracking setup.
-- [ ] **T5.F.2** Offline Network Banner & health checks.
-- [ ] **T5.F.3** Advanced Address Book (My Addresses CRUD screen).
-- [ ] **T5.F.4** Advanced Catalog Filter & Sort (Specialty chips, In Stock toggle).
-- [ ] **T5.F.5** Numeric Keypad entry for cart bulk additions.
-- [ ] **T5.F.6** Order cancellation flow for doctors (in-app cancellation reason picker).
-- [ ] **T5.F.7** Admin Doctor Directory (searchable table).
-- [ ] **T5.F.8** Structured Delivery Info (Courier links, tracking numbers).
-- [ ] **T5.F.9** Saved Sets feature (Save cart as named OT set).
-- [ ] **T5.F.10** Manual PDF Invoices (Admin upload to R2).
-- [ ] **T5.F.11** Self-serve Account Deletion flow (App Store requirement).
+- [x] **T5.F.2** Offline Network Banner & health checks.
+- [x] **T5.F.3** Advanced Address Book (My Addresses CRUD screen).
+- [x] **T5.F.4** Advanced Catalog Filter & Sort (Specialty chips, In Stock toggle).
+- [x] **T5.F.5** Numeric Keypad entry for cart bulk additions.
+- [x] **T5.F.6** Order cancellation flow for doctors (in-app cancellation reason picker).
+- [x] **T5.F.7** Admin Doctor Directory (searchable table).
+- [x] **T5.F.8** Structured Delivery Info (Courier links, tracking numbers).
+- [x] **T5.F.9** Saved Sets feature (Save cart as named OT set).
+- [x] **T5.F.10** Manual PDF Invoices (Admin upload to R2).
+- [x] **T5.F.11** Self-serve Account Deletion flow (App Store requirement).
 
 ### Parking Lot (Out of Scope for now)
 - [ ] **T5.P.1** Inventory tracking & Out-of-stock logic.
 - [ ] **T5.P.2** Tax & Pricing rules (CGST/SGST/IGST).
-- [ ] **T5.P.3** Admin Order Export (CSV/Excel).
+- [x] **T5.P.3** Admin Order Export (CSV/Excel).
 - [ ] **T5.P.4** Advanced 3-channel Notification Matrix (WhatsApp APIs).
 - [ ] **T5.P.5** Offline Catalog Browsing via SQLite.
 - [ ] **T5.P.6** Online Payments (Razorpay) & Payment Reconciliation/Refunds.
@@ -148,5 +148,5 @@
 
 ## Phase 6 & 7: QA, Stores & Launch
 - [ ] **T6.1** Basic Accessibility review (tap targets, labels).
-- [ ] **T6.2** Generate store assets and TestFlight builds.
-- [ ] **T7.1** Operations runbooks, handover docs, and onboarding.
+- [x] **T6.2** Generate store assets and TestFlight builds.
+- [x] **T7.1** Operations runbooks, handover docs, and onboarding.
