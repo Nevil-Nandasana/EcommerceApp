@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { CartItem } from '@/types';
 import { logger } from './logger';
@@ -17,7 +18,7 @@ export interface OutboxOrder {
 
 interface OutboxState {
   outboxOrders: OutboxOrder[];
-  addToOutbox: (order: Omit<OutboxOrder, 'id' | 'createdAt' | 'status'>) => void;
+  addToOutbox: (order: Omit<OutboxOrder, 'id' | 'createdAt' | 'status'>) => Promise<string>;
   flushOutbox: (supabaseClient: any, userId: string) => Promise<void>;
   clearOutbox: () => void;
 }
@@ -25,16 +26,30 @@ interface OutboxState {
 const generateId = () =>
   Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-const outboxStorageAdapter: StateStorage = {
+export const outboxStorageAdapter: StateStorage = {
   getItem: async (name: string): Promise<string | null> => {
     if (Platform.OS === 'web') {
       if (typeof window === 'undefined') return null;
       return window.localStorage.getItem(name);
     }
     try {
-      return await SecureStore.getItemAsync(name);
+      const val = await AsyncStorage.getItem(name);
+      if (val !== null) return val;
+
+      // Graceful migration from legacy SecureStore if previously stored there
+      try {
+        const legacyVal = await SecureStore.getItemAsync(name);
+        if (legacyVal) {
+          await AsyncStorage.setItem(name, legacyVal);
+          await SecureStore.deleteItemAsync(name).catch(() => {});
+          return legacyVal;
+        }
+      } catch {
+        // Ignore legacy read errors
+      }
+      return null;
     } catch (err) {
-      logger.warn('OutboxStorage', `Failed to read ${name} from SecureStore`, err);
+      logger.warn('OutboxStorage', `Failed to read ${name} from AsyncStorage`, err);
       return null;
     }
   },
@@ -46,9 +61,10 @@ const outboxStorageAdapter: StateStorage = {
       return;
     }
     try {
-      await SecureStore.setItemAsync(name, value);
+      await AsyncStorage.setItem(name, value);
     } catch (err) {
-      logger.warn('OutboxStorage', `Failed to write ${name} to SecureStore`, err);
+      logger.error('OutboxStorage', `Failed to write ${name} to AsyncStorage`, err);
+      throw err;
     }
   },
   removeItem: async (name: string): Promise<void> => {
@@ -59,9 +75,10 @@ const outboxStorageAdapter: StateStorage = {
       return;
     }
     try {
-      await SecureStore.deleteItemAsync(name);
+      await AsyncStorage.removeItem(name);
     } catch (err) {
-      logger.warn('OutboxStorage', `Failed to remove ${name} from SecureStore`, err);
+      logger.warn('OutboxStorage', `Failed to remove ${name} from AsyncStorage`, err);
+      throw err;
     }
   },
 };
@@ -70,18 +87,26 @@ export const useOutboxStore = create<OutboxState>()(
   persist(
     (set, get) => ({
       outboxOrders: [],
-      addToOutbox: (order) => {
-        set((state) => ({
-          outboxOrders: [
-            ...state.outboxOrders,
-            {
-              ...order,
-              id: generateId(),
-              createdAt: new Date().toISOString(),
-              status: 'queued',
-            },
-          ],
-        }));
+      addToOutbox: async (order) => {
+        const newOrder: OutboxOrder = {
+          ...order,
+          id: generateId(),
+          createdAt: new Date().toISOString(),
+          status: 'queued',
+        };
+        const nextOrders = [...get().outboxOrders, newOrder];
+
+        // Explicitly write to persistent storage and propagate failure to caller
+        try {
+          const serialized = JSON.stringify({ state: { outboxOrders: nextOrders }, version: 0 });
+          await outboxStorageAdapter.setItem('outbox-storage', serialized);
+        } catch (persistErr) {
+          logger.error('Outbox', 'Failed to persist order to offline storage', persistErr);
+          throw new Error('Could not persist order to device storage. Please check available disk space.');
+        }
+
+        set({ outboxOrders: nextOrders });
+        return newOrder.id;
       },
       flushOutbox: async (supabaseClient, userId) => {
         const { outboxOrders } = get();

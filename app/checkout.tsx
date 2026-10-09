@@ -108,7 +108,7 @@ export default function CheckoutScreen() {
     try {
       const networkState = await NetInfo.fetch();
       if (!networkState.isConnected) {
-        useOutboxStore.getState().addToOutbox({
+        await useOutboxStore.getState().addToOutbox({
           items: cartItems,
           addressId: selectedAddressId,
           addressData: !selectedAddressId
@@ -221,28 +221,32 @@ export default function CheckoutScreen() {
           errorMsg.toLowerCase().includes('offline');
 
         if (isNetworkFailure) {
-          useOutboxStore.getState().addToOutbox({
-            items: cartItems,
-            addressId: finalAddressId,
-            addressData: !selectedAddressId
-              ? { line1: line1.trim(), city: city.trim(), state: stateName.trim(), pincode: pincode.trim() }
-              : null,
-            notes: notes.trim() || null,
-          });
+          try {
+            await useOutboxStore.getState().addToOutbox({
+              items: cartItems,
+              addressId: finalAddressId,
+              addressData: !selectedAddressId
+                ? { line1: line1.trim(), city: city.trim(), state: stateName.trim(), pincode: pincode.trim() }
+                : null,
+              notes: notes.trim() || null,
+            });
 
-          clearCart();
+            clearCart();
 
-          Alert.alert(
-            'Order Saved Offline 🕒',
-            'Connection interrupted during submission. Your order is safely queued in your offline outbox and will submit automatically when reconnected.',
-            [
-              {
-                text: 'View My Orders',
-                onPress: () => router.replace('/(tabs)/orders'),
-              },
-            ]
-          );
-          return;
+            Alert.alert(
+              'Order Saved Offline 🕒',
+              'Connection interrupted during submission. Your order is safely queued in your offline outbox and will submit automatically when reconnected.',
+              [
+                {
+                  text: 'View My Orders',
+                  onPress: () => router.replace('/(tabs)/orders'),
+                },
+              ]
+            );
+            return;
+          } catch (storageErr: any) {
+            throw new Error(`Submission failed due to network issues and offline save failed: ${storageErr.message || 'Storage error'}. Your cart has been preserved.`);
+          }
         }
 
         throw new Error(`Order submission failed: ${rpcError?.message || 'Unknown error'}`);

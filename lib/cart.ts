@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { CartItem } from '@/types';
 
@@ -29,7 +30,21 @@ const cartStorageAdapter: StateStorage = {
       return window.localStorage.getItem(name);
     }
     try {
-      return await SecureStore.getItemAsync(name);
+      const val = await AsyncStorage.getItem(name);
+      if (val !== null) return val;
+
+      // Graceful migration from legacy SecureStore
+      try {
+        const legacyVal = await SecureStore.getItemAsync(name);
+        if (legacyVal) {
+          await AsyncStorage.setItem(name, legacyVal);
+          await SecureStore.deleteItemAsync(name).catch(() => {});
+          return legacyVal;
+        }
+      } catch {
+        // Ignore legacy read errors
+      }
+      return null;
     } catch {
       return null;
     }
@@ -41,11 +56,7 @@ const cartStorageAdapter: StateStorage = {
       }
       return;
     }
-    try {
-      await SecureStore.setItemAsync(name, value);
-    } catch {
-      // Storage error handling
-    }
+    await AsyncStorage.setItem(name, value);
   },
   removeItem: async (name: string): Promise<void> => {
     if (Platform.OS === 'web') {
@@ -54,11 +65,7 @@ const cartStorageAdapter: StateStorage = {
       }
       return;
     }
-    try {
-      await SecureStore.deleteItemAsync(name);
-    } catch {
-      // Storage error handling
-    }
+    await AsyncStorage.removeItem(name);
   },
 };
 
