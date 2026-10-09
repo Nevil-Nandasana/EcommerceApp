@@ -19,6 +19,8 @@ import {
   RefreshControl,
   TextInput,
   ScrollView,
+  Linking,
+  Platform,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -50,6 +52,9 @@ interface AdminOrder {
   hospitalName: string;
   phone: string;
   notes: string | null;
+  courierName?: string | null;
+  trackingNumber?: string | null;
+  invoiceUrl?: string | null;
   items: AdminOrderItem[];
 }
 
@@ -65,10 +70,13 @@ interface AdminProductVariant {
 
 export default function AdminDashboardScreen() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'approvals' | 'orders' | 'products'>('approvals');
+  const [activeTab, setActiveTab] = useState<'approvals' | 'orders' | 'products' | 'directory'>('approvals');
 
-  // Approvals state
+  // Approvals & Directory state
+  const [doctors, setDoctors] = useState<UserProfile[]>([]);
   const [pendingDoctors, setPendingDoctors] = useState<UserProfile[]>([]);
+  const [directorySearch, setDirectorySearch] = useState<string>('');
+  const [directoryStatusFilter, setDirectoryStatusFilter] = useState<string>('all');
 
   // Orders state
   const [orders, setOrders] = useState<AdminOrder[]>([]);
@@ -76,6 +84,12 @@ export default function AdminDashboardScreen() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [editingItemPrice, setEditingItemPrice] = useState<{ [itemId: string]: string }>({});
+
+  const [dispatchingOrderId, setDispatchingOrderId] = useState<string | null>(null);
+  const [courierName, setCourierName] = useState<string>('');
+  const [trackingNumber, setTrackingNumber] = useState<string>('');
+  const [attachingInvoiceOrderId, setAttachingInvoiceOrderId] = useState<string | null>(null);
+  const [invoiceUrlInput, setInvoiceUrlInput] = useState<string>('');
 
   // Products state
   const [variants, setVariants] = useState<AdminProductVariant[]>([]);
@@ -87,18 +101,17 @@ export default function AdminDashboardScreen() {
 
   const fetchData = async () => {
     try {
-      // 1. Fetch pending doctors
+      // 1. Fetch all doctors
       const { data: doctorsData, error: docError } = await supabase
         .from('users')
         .select('*')
-        .eq('approval_status', 'pending')
+        .eq('role', 'doctor')
         .order('created_at', { ascending: false });
 
       if (docError) {
-        logger.error('AdminDashboard', 'Failed to fetch pending doctors', docError);
+        logger.error('AdminDashboard', 'Failed to fetch doctors', docError);
       } else if (doctorsData) {
-        setPendingDoctors(
-          doctorsData.map((d: any) => ({
+        const mappedDoctors = doctorsData.map((d: any) => ({
             id: d.id,
             role: d.role,
             fullName: d.full_name,
@@ -112,8 +125,9 @@ export default function AdminDashboardScreen() {
             approvedAt: d.approved_at,
             createdAt: d.created_at,
             updatedAt: d.updated_at,
-          }))
-        );
+        }));
+        setDoctors(mappedDoctors);
+        setPendingDoctors(mappedDoctors.filter((d: any) => d.approvalStatus === 'pending'));
       }
 
       // 2. Fetch all orders with itemized details
@@ -126,6 +140,9 @@ export default function AdminDashboardScreen() {
           subtotal,
           created_at,
           notes,
+          courier_name,
+          tracking_number,
+          invoice_url,
           users (
             full_name,
             hospital_or_clinic_name,
@@ -160,6 +177,9 @@ export default function AdminDashboardScreen() {
             hospitalName: o.users?.hospital_or_clinic_name || 'Clinic',
             phone: o.users?.phone || '',
             notes: o.notes,
+            courierName: o.courier_name,
+            trackingNumber: o.tracking_number,
+            invoiceUrl: o.invoice_url,
             items: (o.order_items || []).map((oi: any) => ({
               id: oi.id,
               orderId: oi.order_id,
@@ -233,6 +253,7 @@ export default function AdminDashboardScreen() {
       }
 
       Alert.alert('Success', `Doctor account marked as ${status}.`);
+      setDoctors((prev) => prev.map((d) => (d.id === doctorId ? { ...d, approvalStatus: status } : d)));
       setPendingDoctors((prev) => prev.filter((d) => d.id !== doctorId));
     } catch (err) {
       logger.error('AdminDashboard', 'Update doctor failed', err);
@@ -240,11 +261,17 @@ export default function AdminDashboardScreen() {
   };
 
   // State machine guarded transitions (FR-10, FR-13)
-  const handleTransitionOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
+  const handleTransitionOrderStatus = async (orderId: string, nextStatus: OrderStatus, courierPayload?: any) => {
     try {
+      const updatePayload: any = { status: nextStatus };
+      if (nextStatus === 'dispatched' && courierPayload) {
+        updatePayload.courier_name = courierPayload.courierName;
+        updatePayload.tracking_number = courierPayload.trackingNumber;
+      }
+
       const { error } = await supabase
         .from('orders')
-        .update({ status: nextStatus })
+        .update(updatePayload)
         .eq('id', orderId);
 
       if (error) {
@@ -256,8 +283,48 @@ export default function AdminDashboardScreen() {
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
       );
+      if (nextStatus === 'dispatched') {
+        setDispatchingOrderId(null);
+        setCourierName('');
+        setTrackingNumber('');
+      }
     } catch (err) {
       logger.error('AdminDashboard', 'Update status failed', err);
+    }
+  };
+
+  const handleDispatchOrder = (orderId: string) => {
+    if (!courierName.trim() || !trackingNumber.trim()) {
+      Alert.alert('Validation Error', 'Please provide both courier name and tracking number.');
+      return;
+    }
+    handleTransitionOrderStatus(orderId, 'dispatched', { courierName, trackingNumber });
+  };
+
+  const handleSaveInvoiceUrl = async (orderId: string) => {
+    if (!invoiceUrlInput.trim()) {
+      Alert.alert('Validation Error', 'Please enter a valid invoice URL or PDF link.');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ invoice_url: invoiceUrlInput.trim() })
+        .eq('id', orderId);
+
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+
+      Alert.alert('Success', 'Invoice URL attached to order.');
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, invoiceUrl: invoiceUrlInput.trim() } : o))
+      );
+      setAttachingInvoiceOrderId(null);
+      setInvoiceUrlInput('');
+    } catch (err: any) {
+      logger.error('AdminDashboard', 'Save invoice URL failed', err);
     }
   };
 
@@ -375,6 +442,79 @@ export default function AdminDashboardScreen() {
     });
   }, [orders, orderSearch, statusFilter]);
 
+  const handleExportOrdersToCSV = () => {
+    if (filteredOrders.length === 0) {
+      Alert.alert('No Orders', 'There are no orders matching the current filter to export.');
+      return;
+    }
+
+    const headers = [
+      'Order Number',
+      'Date',
+      'Doctor Name',
+      'Hospital/Clinic',
+      'Phone',
+      'Status',
+      'Item Count',
+      'Subtotal (INR)',
+      'Courier Name',
+      'Tracking Number',
+      'Invoice URL',
+      'Order Notes',
+    ];
+
+    const rows = filteredOrders.map((o) => [
+      `"${o.orderNumber}"`,
+      `"${new Date(o.createdAt).toLocaleDateString('en-IN')}"`,
+      `"${o.doctorName.replace(/"/g, '""')}"`,
+      `"${o.hospitalName.replace(/"/g, '""')}"`,
+      `"${o.phone}"`,
+      `"${o.status}"`,
+      o.items.length,
+      o.subtotal !== null ? o.subtotal : 'Unpriced',
+      `"${(o.courierName || '').replace(/"/g, '""')}"`,
+      `"${(o.trackingNumber || '').replace(/"/g, '""')}"`,
+      `"${(o.invoiceUrl || '').replace(/"/g, '""')}"`,
+      `"${(o.notes || '').replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `speqtus_orders_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } else {
+      Alert.alert(
+        'Export Generated',
+        `Generated CSV for ${filteredOrders.length} orders. On web, file downloads directly.`
+      );
+    }
+  };
+
+  // Filtered directory list
+  const filteredDoctors = useMemo(() => {
+    return doctors.filter((d) => {
+      const search = directorySearch.toLowerCase();
+      const matchesSearch =
+        (d.fullName || '').toLowerCase().includes(search) ||
+        (d.hospitalOrClinicName || '').toLowerCase().includes(search) ||
+        (d.phone || '').toLowerCase().includes(search) ||
+        (d.medicalRegistrationNumber || '').toLowerCase().includes(search);
+
+      const matchesStatus =
+        directoryStatusFilter === 'all' || d.approvalStatus === directoryStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [doctors, directorySearch, directoryStatusFilter]);
+
   // Filtered variants list (FR-11)
   const filteredVariants = useMemo(() => {
     return variants.filter((v) => {
@@ -436,6 +576,20 @@ export default function AdminDashboardScreen() {
             ]}
           >
             Prices & Catalog
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'directory' && styles.tabItemActive]}
+          onPress={() => setActiveTab('directory')}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'directory' && styles.tabTextActive,
+            ]}
+          >
+            Directory
           </Text>
         </TouchableOpacity>
       </View>
@@ -525,6 +679,15 @@ export default function AdminDashboardScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            <View style={styles.exportRow}>
+              <TouchableOpacity
+                style={styles.exportBtn}
+                onPress={handleExportOrdersToCSV}
+                accessibilityRole="button"
+              >
+                <Text style={styles.exportBtnText}>📥 Export Orders to CSV ({filteredOrders.length})</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <FlatList
@@ -636,19 +799,57 @@ export default function AdminDashboardScreen() {
                       </View>
                     )}
                     {item.status === 'confirmed' && (
-                      <View style={styles.actionsRow}>
-                        <Button
-                          title="Dispatch"
-                          onPress={() => handleTransitionOrderStatus(item.id, 'dispatched')}
-                          variant="primary"
-                          style={styles.stateBtn}
-                        />
-                        <Button
-                          title="Cancel"
-                          onPress={() => handleTransitionOrderStatus(item.id, 'cancelled')}
-                          variant="danger"
-                          style={styles.stateBtn}
-                        />
+                      <View style={styles.actionsCol}>
+                        {dispatchingOrderId === item.id ? (
+                          <View style={styles.dispatchForm}>
+                            <Text style={styles.dispatchTitle}>Courier Information</Text>
+                            <TextInput
+                              style={styles.dispatchInput}
+                              placeholder="Courier Name (e.g. Blue Dart)"
+                              value={courierName}
+                              onChangeText={setCourierName}
+                            />
+                            <TextInput
+                              style={styles.dispatchInput}
+                              placeholder="Tracking Number / AWB"
+                              value={trackingNumber}
+                              onChangeText={setTrackingNumber}
+                            />
+                            <View style={styles.actionsRow}>
+                              <Button
+                                title="Confirm Dispatch"
+                                onPress={() => handleDispatchOrder(item.id)}
+                                variant="primary"
+                                style={styles.stateBtn}
+                              />
+                              <Button
+                                title="Cancel"
+                                onPress={() => setDispatchingOrderId(null)}
+                                variant="outline"
+                                style={styles.stateBtn}
+                              />
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={styles.actionsRow}>
+                            <Button
+                              title="Dispatch"
+                              onPress={() => {
+                                setDispatchingOrderId(item.id);
+                                setCourierName('');
+                                setTrackingNumber('');
+                              }}
+                              variant="primary"
+                              style={styles.stateBtn}
+                            />
+                            <Button
+                              title="Cancel Order"
+                              onPress={() => handleTransitionOrderStatus(item.id, 'cancelled')}
+                              variant="danger"
+                              style={styles.stateBtn}
+                            />
+                          </View>
+                        )}
                       </View>
                     )}
                     {item.status === 'dispatched' && (
@@ -659,6 +860,62 @@ export default function AdminDashboardScreen() {
                           variant="secondary"
                           style={styles.stateBtn}
                         />
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Tax Invoice Management (T5.F.10) */}
+                  <View style={styles.invoiceSection}>
+                    {item.invoiceUrl ? (
+                      <View style={styles.invoiceRow}>
+                        <Text style={styles.invoiceAttachedText}>📄 Tax Invoice Attached</Text>
+                        <TouchableOpacity onPress={() => Linking.openURL(item.invoiceUrl!)}>
+                          <Text style={styles.invoiceLinkText}>View PDF ↗</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setAttachingInvoiceOrderId(attachingInvoiceOrderId === item.id ? null : item.id);
+                            setInvoiceUrlInput(item.invoiceUrl || '');
+                          }}
+                        >
+                          <Text style={styles.invoiceEditText}>Edit Link</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.attachInvoiceBtn}
+                        onPress={() => {
+                          setAttachingInvoiceOrderId(attachingInvoiceOrderId === item.id ? null : item.id);
+                          setInvoiceUrlInput('');
+                        }}
+                      >
+                        <Text style={styles.attachInvoiceBtnText}>+ Attach GST Invoice PDF</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {attachingInvoiceOrderId === item.id && (
+                      <View style={styles.invoiceInputContainer}>
+                        <TextInput
+                          style={styles.dispatchInput}
+                          placeholder="Paste PDF Invoice URL (e.g. https://...)"
+                          value={invoiceUrlInput}
+                          onChangeText={setInvoiceUrlInput}
+                          autoCapitalize="none"
+                        />
+                        <View style={styles.actionsRow}>
+                          <Button
+                            title="Save Invoice URL"
+                            onPress={() => handleSaveInvoiceUrl(item.id)}
+                            variant="primary"
+                            style={styles.stateBtn}
+                          />
+                          <Button
+                            title="Cancel"
+                            onPress={() => setAttachingInvoiceOrderId(null)}
+                            variant="outline"
+                            style={styles.stateBtn}
+                          />
+                        </View>
                       </View>
                     )}
                   </View>
@@ -735,6 +992,105 @@ export default function AdminDashboardScreen() {
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>No matching catalog variants found.</Text>
+              </View>
+            }
+          />
+        </View>
+      )}
+
+      {/* TAB 4: Doctor Directory */}
+      {activeTab === 'directory' && (
+        <View style={{ flex: 1 }}>
+          <View style={styles.filterSection}>
+            <TextInput
+              style={styles.orderSearchInput}
+              placeholder="Search by Name, Hospital, Phone, Reg No"
+              value={directorySearch}
+              onChangeText={setDirectorySearch}
+            />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterPills}>
+              {['all', 'approved', 'pending', 'rejected'].map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  style={[
+                    styles.pill,
+                    directoryStatusFilter === status && styles.pillActive,
+                  ]}
+                  onPress={() => setDirectoryStatusFilter(status)}
+                >
+                  <Text
+                    style={[
+                      styles.pillText,
+                      directoryStatusFilter === status && styles.pillTextActive,
+                    ]}
+                  >
+                    {status.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <FlatList
+            data={filteredDoctors}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={() => {
+                  setIsRefreshing(true);
+                  fetchData();
+                }}
+              />
+            }
+            renderItem={({ item }) => (
+              <View style={styles.doctorCard}>
+                <View style={styles.orderTopRow}>
+                  <Text style={styles.doctorName}>{item.fullName}</Text>
+                  <StatusBadge status={item.approvalStatus || 'pending'} type="approval" />
+                </View>
+                <Text style={styles.doctorDetail}>{item.hospitalOrClinicName}</Text>
+                <Text style={styles.doctorPhone}>📞 +91 {item.phone}</Text>
+                {item.medicalRegistrationNumber ? (
+                  <Text style={styles.doctorReg}>Reg No: {item.medicalRegistrationNumber}</Text>
+                ) : null}
+                {item.specialty ? (
+                  <Text style={styles.doctorSpecialty}>Specialty: {item.specialty}</Text>
+                ) : null}
+                <Text style={styles.doctorDetail}>
+                  Joined: {new Date(item.createdAt).toLocaleDateString('en-IN')}
+                </Text>
+
+                <View style={styles.approvalButtons}>
+                  <Button
+                    title="Approve"
+                    onPress={() => {
+                      Alert.alert('Confirm Approve', 'Are you sure you want to approve this doctor?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Approve', onPress: () => handleUpdateDoctorApproval(item.id, 'approved') },
+                      ]);
+                    }}
+                    variant="secondary"
+                    style={styles.actionBtn}
+                  />
+                  <Button
+                    title="Reject/Suspend"
+                    onPress={() => {
+                      Alert.alert('Confirm Reject', 'Are you sure you want to reject/suspend this doctor?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Reject', onPress: () => handleUpdateDoctorApproval(item.id, 'rejected'), style: 'destructive' },
+                      ]);
+                    }}
+                    variant="danger"
+                    style={styles.actionBtn}
+                  />
+                </View>
+              </View>
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No matching doctors found.</Text>
               </View>
             }
           />
@@ -991,6 +1347,34 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
   },
+  actionsCol: {
+    width: '100%',
+  },
+  dispatchForm: {
+    backgroundColor: colors.surfaceSubtle,
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.xs,
+  },
+  dispatchTitle: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  dispatchInput: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    fontSize: typography.fontSizes.sm,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
   variantCard: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -1044,5 +1428,63 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: typography.fontSizes.sm,
     color: colors.textSecondary,
+  },
+  exportRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: spacing.sm,
+  },
+  exportBtn: {
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: borderRadius.sm,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+  },
+  exportBtnText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.primary,
+  },
+  invoiceSection: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceSubtle,
+  },
+  invoiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  invoiceAttachedText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: '#059669',
+  },
+  invoiceLinkText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+    textDecorationLine: 'underline',
+  },
+  invoiceEditText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textMuted,
+  },
+  attachInvoiceBtn: {
+    paddingVertical: 4,
+  },
+  attachInvoiceBtnText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.primary,
+  },
+  invoiceInputContainer: {
+    backgroundColor: colors.surfaceSubtle,
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    marginTop: spacing.xs,
   },
 });
