@@ -102,6 +102,9 @@ export interface Order {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
   invoiceUrl: string | null;
+  courierName?: string | null;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
   createdAt: string;
   updatedAt: string;
   items?: OrderItem[];
@@ -127,4 +130,22 @@ export interface CartItem {
   price: number | null;
   imageUrl: string;
   quantity: number;
+}
+
+export interface SavedSet {
+  id: string;
+  userId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  items?: SavedSetItem[];
+}
+
+export interface SavedSetItem {
+  id: string;
+  setId: string;
+  productVariantId: string;
+  quantity: number;
+  variant?: ProductVariant;
+  product?: Product & { category?: { name: string } };
 }
