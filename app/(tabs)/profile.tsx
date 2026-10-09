@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/Button';
 import { colors } from '@/constants/colors';
@@ -25,12 +26,25 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { session, profile, signOut, isPending, isAdmin } = useAuth();
 
+  const supportPhone = process.env.EXPO_PUBLIC_SUPPORT_PHONE || process.env.EXPO_PUBLIC_WHATSAPP_PHONE;
+
   const handleSupportCall = () => {
-    Linking.openURL('tel:+919876543210');
+    if (!supportPhone) {
+      Alert.alert('Customer Support', 'Customer support phone number is not configured in this environment.');
+      return;
+    }
+    const cleanPhone = supportPhone.replace(/[^0-9+]/g, '');
+    Linking.openURL(`tel:${cleanPhone}`);
   };
 
   const handleSupportWhatsApp = () => {
-    Linking.openURL('https://wa.me/919876543210?text=Hello%20Speqtus%20Medical,%20I%20need%20assistance%20with%20my%20order.');
+    const waPhone = process.env.EXPO_PUBLIC_WHATSAPP_PHONE || process.env.EXPO_PUBLIC_SUPPORT_PHONE;
+    if (!waPhone) {
+      Alert.alert('Customer Support', 'WhatsApp support number is not configured in this environment.');
+      return;
+    }
+    const cleanWa = waPhone.replace(/[^0-9]/g, '');
+    Linking.openURL(`https://wa.me/${cleanWa}?text=Hello%20Speqtus%20Medical,%20I%20need%20assistance%20with%20my%20order.`);
   };
 
   const handleSignOut = async () => {
@@ -45,6 +59,35 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Are you sure?',
+      'This will permanently delete your account and all personal data. Your order history will be anonymized for compliance. This cannot be undone.',
+      [
+        { text: strings.common.cancel, style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsDeleting(true);
+              const { error } = await supabase.rpc('delete_user_account');
+              if (error) throw error;
+              await signOut();
+              router.replace('/(auth)/login');
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete account');
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (!session) {
@@ -114,7 +157,9 @@ export default function ProfileScreen() {
           <Text style={styles.supportIcon}>📞</Text>
           <View style={styles.supportCol}>
             <Text style={styles.supportTitle}>Call Customer Support</Text>
-            <Text style={styles.supportSubtitle}>+91 98765 43210 (Mon-Sat 9am-7pm)</Text>
+            <Text style={styles.supportSubtitle}>
+              {supportPhone ? `${supportPhone} (Mon-Sat 9am-7pm)` : 'Mon-Sat 9am-7pm'}
+            </Text>
           </View>
         </TouchableOpacity>
         <TouchableOpacity style={styles.supportRow} onPress={handleSupportWhatsApp}>
@@ -143,10 +188,29 @@ export default function ProfileScreen() {
 
       <View style={styles.actionSection}>
         <Button
+          title="Manage My OT Sets"
+          onPress={() => router.push('/saved-sets')}
+          variant="secondary"
+          style={{ marginBottom: spacing.md }}
+        />
+        <Button
+          title="Delivery Addresses"
+          onPress={() => router.push('/addresses')}
+          variant="secondary"
+          style={{ marginBottom: spacing.md }}
+        />
+        <Button
           title="Sign Out"
           onPress={handleSignOut}
           variant="outline"
-          style={styles.signOutBtn}
+        />
+        <Button
+          title="Delete My Account"
+          onPress={handleDeleteAccount}
+          variant="outline"
+          style={{ borderColor: colors.error, marginTop: spacing.md }}
+          textStyle={{ color: colors.error }}
+          loading={isDeleting}
         />
       </View>
     </ScrollView>
@@ -292,8 +356,5 @@ const styles = StyleSheet.create({
   actionSection: {
     marginTop: spacing.md,
     marginBottom: spacing.xxl,
-  },
-  signOutBtn: {
-    borderColor: colors.error,
   },
 });

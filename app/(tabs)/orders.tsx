@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useCartStore } from '@/lib/cart';
+import { useOutboxStore } from '@/lib/outbox';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/Button';
 import { colors } from '@/constants/colors';
@@ -48,6 +49,7 @@ export default function MyOrdersScreen() {
   const router = useRouter();
   const { session, user } = useAuth();
   const addItemToCart = useCartStore((state) => state.addItem);
+  const outboxOrders = useOutboxStore((state) => state.outboxOrders);
   const [orders, setOrders] = useState<PastOrder[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -175,6 +177,43 @@ export default function MyOrdersScreen() {
             }}
             colors={[colors.primary]}
           />
+        }
+        ListHeaderComponent={
+          outboxOrders.length > 0 ? (
+            <View style={{ marginBottom: spacing.md }}>
+              {outboxOrders.map(outbox => (
+                <View key={outbox.id} style={[styles.orderCard, { borderColor: colors.warning }]}>
+                  <View style={styles.orderHeader}>
+                    <View>
+                      <Text style={styles.orderNumber}>Offline Request</Text>
+                      <Text style={styles.orderDate}>
+                        {new Date(outbox.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </Text>
+                    </View>
+                    <View style={{ backgroundColor: '#FFF9C4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                      <Text style={{ color: '#F57F17', fontSize: 12, fontWeight: 'bold' }}>🕒 Queued — Pending Sync</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.orderSummary, { borderTopColor: '#FFF9C4', borderBottomColor: '#FFF9C4' }]}>
+                    <View>
+                      <Text style={styles.itemSummaryText}>
+                        {outbox.items.length} {outbox.items.length === 1 ? 'item' : 'items'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 4 }}>
+                        Will sync automatically when connected
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null
         }
         renderItem={({ item }) => (
           <TouchableOpacity

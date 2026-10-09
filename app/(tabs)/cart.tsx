@@ -3,7 +3,7 @@
  * Displays selected instrument variants grouped by category, steppers, and review CTA.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Image,
+  Modal,
+  TextInput,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { supabase } from '@/lib/supabase';
 import { useCartStore } from '@/lib/cart';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/Button';
@@ -26,6 +31,7 @@ export default function CartScreen() {
   const { isPending, isApproved } = useAuth();
   const cartItems = useCartStore((state) => state.cartItems);
   const updateQuantity = useCartStore((state) => state.updateQuantity);
+  const setQuantity = useCartStore((state) => state.setQuantity);
   const removeItem = useCartStore((state) => state.removeItem);
   const clearCart = useCartStore((state) => state.clearCart);
   const estimatedSubtotal = useCartStore((state) => state.getEstimatedSubtotal());
@@ -72,6 +78,69 @@ export default function CartScreen() {
       </View>
     );
   }
+
+  const { user } = useAuth();
+  const [isSavingSet, setIsSavingSet] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [setName, setSetName] = useState('');
+
+  const handleSaveSet = async (name?: string) => {
+    if (!name || !name.trim()) {
+      Alert.alert('Error', 'Please enter a name for the OT Set.');
+      return;
+    }
+    setIsSavingSet(true);
+    try {
+      // 1. Insert saved_set
+      const { data: setRecord, error: setError } = await supabase
+        .from('saved_sets')
+        .insert({
+          user_id: user?.id,
+          name: name.trim(),
+        })
+        .select('id')
+        .single();
+      
+      if (setError || !setRecord) throw setError;
+
+      // 2. Insert items
+      const itemsPayload = cartItems.map(item => ({
+        saved_set_id: setRecord.id,
+        product_variant_id: item.variantId,
+        quantity: item.quantity,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('saved_set_items')
+        .insert(itemsPayload);
+      
+      if (itemsError) throw itemsError;
+
+      Alert.alert('Success', 'OT Set saved! View your sets in Profile.');
+      setShowSaveModal(false);
+      setSetName('');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to save OT set');
+    } finally {
+      setIsSavingSet(false);
+    }
+  };
+
+  const promptSaveSet = () => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Save as OT Set',
+        'Enter a name for this set:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Save', onPress: handleSaveSet }
+        ],
+        'plain-text'
+      );
+    } else {
+      setShowSaveModal(true);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -120,7 +189,23 @@ export default function CartScreen() {
                 >
                   <Text style={styles.stepperBtnText}>-</Text>
                 </TouchableOpacity>
-                <Text style={styles.stepperQty}>{item.quantity}</Text>
+                <TextInput
+                  style={styles.stepperInput}
+                  value={String(item.quantity)}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/[^0-9]/g, '');
+                    if (!clean) {
+                      setQuantity(item.variantId, 1);
+                    } else {
+                      const parsed = parseInt(clean, 10);
+                      setQuantity(item.variantId, Math.max(1, Math.min(parsed, 999)));
+                    }
+                  }}
+                  keyboardType="number-pad"
+                  selectTextOnFocus
+                  maxLength={3}
+                  accessibilityLabel={`Quantity ${item.quantity}. Tap to edit directly.`}
+                />
                 <TouchableOpacity
                   onPress={() => updateQuantity(item.variantId, 1)}
                   style={styles.stepperBtn}
@@ -161,12 +246,47 @@ export default function CartScreen() {
           </Text>
         </View>
         <Text style={styles.noticeText}>{strings.cart.subtotalNotice}</Text>
+        
+        {isApproved && cartItems.length > 0 && (
+          <Button
+            title="Save as OT Set 💾"
+            onPress={promptSaveSet}
+            variant="outline"
+            style={{ marginBottom: spacing.sm }}
+            loading={isSavingSet}
+          />
+        )}
+
         <Button
           title={isApproved ? strings.cart.reviewOrder : 'Login / Verification Required'}
           onPress={handleCheckout}
           variant={isApproved ? 'secondary' : 'primary'}
         />
       </View>
+
+      <Modal visible={showSaveModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Save as OT Set</Text>
+            <Text style={styles.modalSub}>Enter a name for this set:</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={setName}
+              onChangeText={setSetName}
+              placeholder="e.g. Minor OT Set"
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={() => setShowSaveModal(false)} style={styles.modalBtn}>
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleSaveSet(setName)} style={[styles.modalBtn, styles.modalBtnPrimary]}>
+                <Text style={styles.modalBtnTextPrimary}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -304,6 +424,15 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.semibold,
     color: colors.textPrimary,
   },
+  stepperInput: {
+    width: 36,
+    height: 28,
+    textAlign: 'center',
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textPrimary,
+    padding: 0,
+  },
   removeBtn: {
     paddingVertical: spacing.xs,
   },
@@ -357,5 +486,55 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xs,
     color: colors.textMuted,
     marginBottom: spacing.md,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    padding: spacing.xl,
+    borderRadius: borderRadius.md,
+    width: '80%',
+  },
+  modalTitle: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    marginBottom: spacing.sm,
+  },
+  modalSub: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  modalBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginLeft: spacing.sm,
+  },
+  modalBtnPrimary: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.sm,
+  },
+  modalBtnText: {
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeights.semibold,
+  },
+  modalBtnTextPrimary: {
+    color: colors.surface,
+    fontWeight: typography.fontWeights.semibold,
   },
 });

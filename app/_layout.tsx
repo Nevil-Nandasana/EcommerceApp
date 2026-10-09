@@ -3,15 +3,46 @@
  * Configures AuthProvider, theme, and top-level Stack navigation.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AuthProvider } from '@/lib/auth';
+import { AuthProvider, useAuth } from '@/lib/auth';
 import { colors } from '@/constants/colors';
+import { prefetchCatalogThumbnails } from '@/lib/imageCache';
+import { startNetworkSync, stopNetworkSync } from '@/lib/networkSync';
+import { supabase } from '@/lib/supabase';
+import { OfflineBanner } from '@/components/OfflineBanner';
+
+function AppStartup() {
+  const { isApproved, session, user } = useAuth();
+  
+  useEffect(() => {
+    if (session && user) {
+      startNetworkSync(supabase, user.id);
+    }
+    return () => stopNetworkSync();
+  }, [session, user]);
+
+  useEffect(() => {
+    if (isApproved) {
+      const runPrefetch = async () => {
+        const { data } = await supabase.from('products').select('image_url').not('image_url', 'is', null);
+        if (data) {
+          prefetchCatalogThumbnails(data.map(d => d.image_url));
+        }
+      };
+      runPrefetch();
+    }
+  }, [isApproved]);
+
+  return null;
+}
 
 export default function RootLayout() {
   return (
     <AuthProvider>
+      <AppStartup />
+      <OfflineBanner />
       <StatusBar style="light" backgroundColor={colors.primary} />
       <Stack
         screenOptions={{
@@ -55,6 +86,14 @@ export default function RootLayout() {
         <Stack.Screen
           name="order/[id]"
           options={{ title: 'Order Details', headerBackTitle: 'Orders' }}
+        />
+        <Stack.Screen
+          name="saved-sets"
+          options={{ title: 'My OT Sets', headerBackTitle: 'Profile' }}
+        />
+        <Stack.Screen
+          name="addresses"
+          options={{ title: 'Delivery Addresses', headerBackTitle: 'Profile' }}
         />
       </Stack>
     </AuthProvider>

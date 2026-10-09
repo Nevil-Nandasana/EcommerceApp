@@ -13,10 +13,14 @@ import {
   Image,
   Linking,
   Alert,
+  Modal,
+  TextInput,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useCartStore } from '@/lib/cart';
+import { useAuth } from '@/lib/auth';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/Button';
 import { OrderStatus } from '@/types';
@@ -60,15 +64,25 @@ interface FullOrderDetails {
   } | null;
   items: OrderDetailItem[];
   timeline: OrderTimelineEvent[];
+  courierName?: string | null;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
+  invoiceUrl?: string | null;
 }
 
 export default function OrderDetailScreen() {
   const router = useRouter();
   const { id: orderId } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const addItemToCart = useCartStore((state) => state.addItem);
 
   const [order, setOrder] = useState<FullOrderDetails | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Cancellation State
+  const [isCancelModalVisible, setCancelModalVisible] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelOtherText, setCancelOtherText] = useState('');
 
   const fetchOrderDetails = async () => {
     if (!orderId) return;
@@ -84,6 +98,10 @@ export default function OrderDetailScreen() {
           subtotal,
           notes,
           created_at,
+          courier_name,
+          tracking_number,
+          tracking_url,
+          invoice_url,
           addresses (
             label,
             line1,
@@ -167,6 +185,10 @@ export default function OrderDetailScreen() {
         address: addr || null,
         items: mappedItems,
         timeline: mappedTimeline,
+        courierName: ordData.courier_name,
+        trackingNumber: ordData.tracking_number,
+        trackingUrl: ordData.tracking_url,
+        invoiceUrl: ordData.invoice_url,
       });
     } catch (err) {
       logger.error('OrderDetail', 'Unexpected error', err);
@@ -178,6 +200,46 @@ export default function OrderDetailScreen() {
   useEffect(() => {
     fetchOrderDetails();
   }, [orderId]);
+
+  const handleCancelOrder = async () => {
+    if (!orderId || !cancelReason) {
+      Alert.alert('Select Reason', 'Please select a reason for cancellation.');
+      return;
+    }
+    const finalReason = cancelReason === 'Other' ? cancelOtherText : cancelReason;
+
+    try {
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', orderId);
+
+      if (updateError) {
+        logger.error('OrderDetail', 'Failed to cancel order', updateError);
+        Alert.alert('Error', 'Could not cancel order.');
+        return;
+      }
+
+      const { error: historyError } = await supabase
+        .from('order_status_history')
+        .insert({
+          order_id: orderId,
+          status: 'cancelled',
+          changed_by: user?.id,
+          note: `Cancelled by doctor: ${finalReason}`,
+        });
+
+      if (historyError) {
+        logger.error('OrderDetail', 'Failed to insert history', historyError);
+      }
+
+      setCancelModalVisible(false);
+      fetchOrderDetails();
+      Alert.alert('Cancelled', 'Your order request has been cancelled.');
+    } catch (err) {
+      logger.error('OrderDetail', 'Cancel error', err);
+    }
+  };
 
   const handleReorder = () => {
     if (!order) return;
@@ -204,10 +266,19 @@ export default function OrderDetailScreen() {
 
   const handleSupportWhatsApp = () => {
     if (!order) return;
+    const waPhone = process.env.EXPO_PUBLIC_WHATSAPP_PHONE || process.env.EXPO_PUBLIC_SUPPORT_PHONE;
+    if (!waPhone) {
+      Alert.alert(
+        'Customer Support',
+        'WhatsApp support number is not configured in this environment.'
+      );
+      return;
+    }
+    const cleanWa = waPhone.replace(/[^0-9]/g, '');
     const msg = encodeURIComponent(
       `Hello Speqtus Medical, I have a question regarding order #${order.orderNumber}.`
     );
-    Linking.openURL(`https://wa.me/919876543210?text=${msg}`);
+    Linking.openURL(`https://wa.me/${cleanWa}?text=${msg}`);
   };
 
   if (isLoading) {
@@ -259,6 +330,50 @@ export default function OrderDetailScreen() {
           </View>
         )}
       </View>
+
+      {/* Courier Tracking Info */}
+      {order.courierName && order.trackingNumber && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Delivery Tracking</Text>
+          <View style={styles.trackingBox}>
+            <Text style={styles.trackingLabel}>Courier:</Text>
+            <Text style={styles.trackingValue}>{order.courierName}</Text>
+          </View>
+          <View style={styles.trackingBox}>
+            <Text style={styles.trackingLabel}>Tracking / AWB Number:</Text>
+            <Text selectable style={styles.trackingValueBold}>{order.trackingNumber}</Text>
+          </View>
+          <Button
+            title="Track Order"
+            onPress={() => {
+              if (order.trackingUrl) {
+                Linking.openURL(order.trackingUrl);
+              } else {
+                const query = encodeURIComponent(`${order.courierName} tracking ${order.trackingNumber}`);
+                Linking.openURL(`https://www.google.com/search?q=${query}`);
+              }
+            }}
+            variant="outline"
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
+      )}
+
+      {/* Tax Invoice Download (T5.F.10) */}
+      {order.invoiceUrl && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>GST Tax Invoice</Text>
+          <Text style={styles.invoiceNotice}>
+            An official tax invoice has been generated for this order.
+          </Text>
+          <Button
+            title="Download Tax Invoice (PDF) 📄"
+            onPress={() => Linking.openURL(order.invoiceUrl!)}
+            variant="secondary"
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
+      )}
 
       {/* Status Timeline */}
       <View style={styles.card}>
@@ -365,6 +480,14 @@ export default function OrderDetailScreen() {
 
       {/* Actions */}
       <View style={styles.actionButtons}>
+        {order.status === 'requested' && (
+          <Button
+            title="Cancel Order Request"
+            onPress={() => setCancelModalVisible(true)}
+            variant="danger"
+            style={styles.actionBtn}
+          />
+        )}
         <Button
           title={strings.orders.reorder}
           onPress={handleReorder}
@@ -378,6 +501,68 @@ export default function OrderDetailScreen() {
           style={styles.actionBtn}
         />
       </View>
+
+      {/* Cancel Order Modal */}
+      <Modal
+        visible={isCancelModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCancelModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Cancel Order</Text>
+            <Text style={styles.modalSubtitle}>Please select a reason for cancellation:</Text>
+            
+            <ScrollView style={styles.modalOptions}>
+              {[
+                'Procedure rescheduled / postponed',
+                'Ordered incorrect instrument / size',
+                'Duplicate order placed',
+                'Purchased from alternative source',
+                'Other',
+              ].map((reason) => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[
+                    styles.radioBtn,
+                    cancelReason === reason && styles.radioBtnSelected,
+                  ]}
+                  onPress={() => setCancelReason(reason)}
+                >
+                  <Text style={[styles.radioText, cancelReason === reason && styles.radioTextSelected]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              {cancelReason === 'Other' && (
+                <TextInput
+                  style={styles.otherInput}
+                  placeholder="Please specify..."
+                  value={cancelOtherText}
+                  onChangeText={setCancelOtherText}
+                />
+              )}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <Button
+                title="Keep Order"
+                onPress={() => setCancelModalVisible(false)}
+                variant="outline"
+                style={{ flex: 1, marginRight: spacing.sm }}
+              />
+              <Button
+                title="Confirm Cancel"
+                onPress={handleCancelOrder}
+                variant="danger"
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -450,6 +635,11 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.textPrimary,
     marginBottom: spacing.md,
+  },
+  invoiceNotice: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
   },
   timelineContainer: {
     paddingLeft: spacing.xs,
@@ -599,5 +789,82 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     width: '100%',
+  },
+  trackingBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  trackingLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+  },
+  trackingValue: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textPrimary,
+  },
+  trackingValueBold: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.error,
+    marginBottom: spacing.xs,
+  },
+  modalSubtitle: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  modalOptions: {
+    marginBottom: spacing.md,
+  },
+  radioBtn: {
+    padding: spacing.md,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  radioBtnSelected: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorLight,
+  },
+  radioText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textPrimary,
+  },
+  radioTextSelected: {
+    fontWeight: typography.fontWeights.bold,
+    color: colors.error,
+  },
+  otherInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.xs,
+    fontSize: typography.fontSizes.sm,
+    color: colors.textPrimary,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
   },
 });

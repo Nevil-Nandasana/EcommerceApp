@@ -10,9 +10,9 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  Image,
   Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -178,7 +178,8 @@ export default function ProductDetailScreen() {
         <Image
           source={{ uri: product.imageUrl || 'https://via.placeholder.com/300' }}
           style={styles.mainImage}
-          resizeMode="contain"
+          contentFit="cover"
+          cachePolicy="disk"
         />
       </View>
 

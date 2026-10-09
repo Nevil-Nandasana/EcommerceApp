@@ -15,7 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.speqtusmedical.ordering"
+      "bundleIdentifier": "com.speqtusmedical.ordering",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +26,11 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.speqtusmedical.ordering",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET",
+        "POST_NOTIFICATIONS"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {

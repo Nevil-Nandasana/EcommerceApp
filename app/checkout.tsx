@@ -10,9 +10,13 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
+import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '@/lib/supabase';
+import { useOutboxStore } from '@/lib/outbox';
 import { useAuth } from '@/lib/auth';
 import { useCartStore } from '@/lib/cart';
 import { Input } from '@/components/Input';
@@ -21,6 +25,7 @@ import { Address } from '@/types';
 import { colors } from '@/constants/colors';
 import { spacing, typography, borderRadius } from '@/constants/theme';
 import { strings } from '@/constants/strings';
+import { APP_CONFIG } from '@/constants/config';
 import { logger } from '@/lib/logger';
 
 export default function CheckoutScreen() {
@@ -92,16 +97,79 @@ export default function CheckoutScreen() {
     setIsSubmitting(true);
     setError(null);
 
+    if (!selectedAddressId) {
+      if (!line1.trim() || !city.trim() || !pincode.trim()) {
+        setError('Please provide a complete delivery address.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     try {
+      const networkState = await NetInfo.fetch();
+      if (!networkState.isConnected) {
+        useOutboxStore.getState().addToOutbox({
+          items: cartItems,
+          addressId: selectedAddressId,
+          addressData: !selectedAddressId
+            ? { line1: line1.trim(), city: city.trim(), state: stateName.trim(), pincode: pincode.trim() }
+            : null,
+          notes: notes.trim() || null,
+        });
+
+        clearCart();
+
+        const orderSummaryText = cartItems
+          .map((item) => `${item.quantity}x ${item.productName} (${item.artNo})`)
+          .join('\n');
+        
+        let addressStr = '';
+        if (addresses.length > 0 && selectedAddressId) {
+          const a = addresses.find(x => x.id === selectedAddressId)!;
+          addressStr = `${a.line1}, ${a.city}, ${a.pincode}`;
+        } else {
+          addressStr = `${line1.trim()}, ${city.trim()}, ${pincode.trim()}`;
+        }
+
+        const whatsappMsg = `New Order Request:\n${orderSummaryText}\nAddress: ${addressStr}\nNotes: ${notes.trim() || 'None'}`;
+
+        Alert.alert(
+          'Order Captured! 🕒',
+          'It will be submitted automatically when you reconnect to the internet.',
+          [
+            {
+              text: 'Also Send via WhatsApp',
+              onPress: () => {
+                const whatsappPhone = APP_CONFIG.whatsappPhone || process.env.EXPO_PUBLIC_WHATSAPP_PHONE;
+                if (!whatsappPhone) {
+                  Alert.alert(
+                    'Support Contact',
+                    'WhatsApp business ordering is not configured in this environment. Your order remains safely queued in your offline outbox and will submit automatically when reconnected.',
+                    [{ text: 'OK', onPress: () => router.replace('/(tabs)/orders') }]
+                  );
+                  return;
+                }
+                const cleanPhone = whatsappPhone.replace(/[^0-9+]/g, '');
+                Linking.openURL(
+                  `whatsapp://send?phone=${encodeURIComponent(cleanPhone)}&text=${encodeURIComponent(whatsappMsg)}`
+                );
+                router.replace('/(tabs)/orders');
+              },
+            },
+            {
+              text: 'View My Orders',
+              onPress: () => router.replace('/(tabs)/orders'),
+            },
+          ]
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       let finalAddressId = selectedAddressId;
 
       // Create address if none existed or new entered
       if (!finalAddressId) {
-        if (!line1.trim() || !city.trim() || !pincode.trim()) {
-          setError('Please provide a complete delivery address.');
-          setIsSubmitting(false);
-          return;
-        }
 
         const { data: newAddr, error: createAddrError } = await supabase
           .from('addresses')
@@ -139,42 +207,45 @@ export default function CheckoutScreen() {
 
       if (!rpcError && rpcData) {
         orderNumber = rpcData.order_number;
+        
+        // Fire and forget email alert
+        supabase.functions.invoke('send-order-alert', { body: { order_id: rpcData.id } })
+          .catch((err) => logger.warn('Checkout', 'Failed to invoke order alert', err));
       } else {
-        // Fallback to standard insert if RPC migration not yet deployed
-        logger.warn('Checkout', 'submit_order RPC failed, falling back to direct insert', rpcError);
+        const errorMsg = rpcError?.message || '';
+        const isNetworkFailure =
+          errorMsg.toLowerCase().includes('network') ||
+          errorMsg.toLowerCase().includes('fetch') ||
+          errorMsg.toLowerCase().includes('timeout') ||
+          errorMsg.toLowerCase().includes('connection') ||
+          errorMsg.toLowerCase().includes('offline');
 
-        const { data: orderData, error: orderError } = await supabase
-          .from('orders')
-          .insert({
-            user_id: user?.id,
-            address_id: finalAddressId,
-            status: 'requested',
-            payment_status: 'not_applicable',
+        if (isNetworkFailure) {
+          useOutboxStore.getState().addToOutbox({
+            items: cartItems,
+            addressId: finalAddressId,
+            addressData: !selectedAddressId
+              ? { line1: line1.trim(), city: city.trim(), state: stateName.trim(), pincode: pincode.trim() }
+              : null,
             notes: notes.trim() || null,
-          })
-          .select('id, order_number')
-          .single();
+          });
 
-        if (orderError || !orderData) {
-          throw new Error(`Order placement failed: ${orderError?.message || rpcError?.message}`);
+          clearCart();
+
+          Alert.alert(
+            'Order Saved Offline 🕒',
+            'Connection interrupted during submission. Your order is safely queued in your offline outbox and will submit automatically when reconnected.',
+            [
+              {
+                text: 'View My Orders',
+                onPress: () => router.replace('/(tabs)/orders'),
+              },
+            ]
+          );
+          return;
         }
 
-        orderNumber = orderData.order_number;
-
-        const orderItemsPayload = cartItems.map((item) => ({
-          order_id: orderData.id,
-          product_variant_id: item.variantId,
-          quantity: item.quantity,
-          unit_price_at_order: item.price,
-        }));
-
-        const { error: itemsError } = await supabase
-          .from('order_items')
-          .insert(orderItemsPayload);
-
-        if (itemsError) {
-          throw new Error(`Order items creation failed: ${itemsError.message}`);
-        }
+        throw new Error(`Order submission failed: ${rpcError?.message || 'Unknown error'}`);
       }
 
       // Clear cart
@@ -204,12 +275,29 @@ export default function CheckoutScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{strings.cart.deliveryAddress}</Text>
         {addresses.length > 0 ? (
-          <View style={styles.existingAddress}>
-            <Text style={styles.addressLabel}>{addresses[0].label}</Text>
-            <Text style={styles.addressText}>{addresses[0].line1}</Text>
-            <Text style={styles.addressText}>
-              {addresses[0].city}, {addresses[0].state} - {addresses[0].pincode}
-            </Text>
+          <View>
+            {addresses.map((a) => (
+              <TouchableOpacity
+                key={a.id}
+                style={[
+                  styles.existingAddress,
+                  selectedAddressId === a.id && styles.existingAddressSelected,
+                ]}
+                onPress={() => setSelectedAddressId(a.id)}
+              >
+                <View style={styles.addressHeaderRow}>
+                  <Text style={[styles.addressLabel, selectedAddressId === a.id && { color: colors.primary }]}>{a.label}</Text>
+                  {selectedAddressId === a.id && <Text style={{ color: colors.primary }}>✓</Text>}
+                </View>
+                <Text style={styles.addressText}>{a.line1}</Text>
+                <Text style={styles.addressText}>
+                  {a.city}, {a.state} - {a.pincode}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => router.push('/addresses')} style={{ marginTop: spacing.sm }}>
+              <Text style={{ color: colors.primary, fontWeight: '600' }}>+ Add / Manage Addresses</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View>
@@ -251,6 +339,9 @@ export default function CheckoutScreen() {
           numberOfLines={3}
           style={styles.notesInput}
         />
+        <Text style={styles.phiWarning}>
+          ⚠️ Do not include patient names, medical record numbers, or any patient-identifiable information in order notes.
+        </Text>
       </View>
 
       <View style={styles.card}>
@@ -311,11 +402,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSubtle,
     padding: spacing.md,
     borderRadius: borderRadius.base,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  existingAddressSelected: {
+    borderColor: colors.primary,
+    backgroundColor: '#e6f0ff', // light primary tint
+  },
+  addressHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   addressLabel: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
-    color: colors.primary,
+    color: colors.textPrimary,
   },
   addressText: {
     fontSize: typography.fontSizes.sm,
@@ -361,6 +464,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   submitBtn: {
+    marginTop: spacing.sm,
+  },
+  phiWarning: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.warning,
     marginTop: spacing.sm,
   },
 });
