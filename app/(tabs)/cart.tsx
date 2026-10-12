@@ -22,8 +22,9 @@ import { useCartStore } from '@/lib/cart';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/Button';
 import { CartItem } from '@/types';
+import { calculateGstBreakdown } from '@/lib/tax';
 import { colors } from '@/constants/colors';
-import { spacing, typography, borderRadius } from '@/constants/theme';
+import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 
 export default function CartScreen() {
@@ -185,7 +186,8 @@ export default function CartScreen() {
                   onPress={() => updateQuantity(item.variantId, -1)}
                   style={styles.stepperBtn}
                   accessibilityRole="button"
-                  accessibilityLabel="Decrease quantity"
+                  accessibilityLabel={`Decrease quantity for ${item.productName}`}
+                  accessibilityHint="Decreases quantity by 1"
                 >
                   <Text style={styles.stepperBtnText}>-</Text>
                 </TouchableOpacity>
@@ -205,12 +207,14 @@ export default function CartScreen() {
                   selectTextOnFocus
                   maxLength={3}
                   accessibilityLabel={`Quantity ${item.quantity}. Tap to edit directly.`}
+                  accessibilityHint="Allows direct numeric quantity entry"
                 />
                 <TouchableOpacity
                   onPress={() => updateQuantity(item.variantId, 1)}
                   style={styles.stepperBtn}
                   accessibilityRole="button"
-                  accessibilityLabel="Increase quantity"
+                  accessibilityLabel={`Increase quantity for ${item.productName}`}
+                  accessibilityHint="Increases quantity by 1"
                 >
                   <Text style={styles.stepperBtnText}>+</Text>
                 </TouchableOpacity>
@@ -220,7 +224,8 @@ export default function CartScreen() {
                 onPress={() => removeItem(item.variantId)}
                 style={styles.removeBtn}
                 accessibilityRole="button"
-                accessibilityLabel="Remove item from cart"
+                accessibilityLabel={`Remove ${item.productName} from cart`}
+                accessibilityHint="Removes this instrument variant from your cart"
               >
                 <Text style={styles.removeBtnText}>Remove</Text>
               </TouchableOpacity>
@@ -237,15 +242,39 @@ export default function CartScreen() {
       />
 
       <View style={styles.bottomBar}>
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Estimated Total:</Text>
-          <Text style={styles.totalValue}>
-            {estimatedSubtotal !== null
-              ? `₹${estimatedSubtotal.toLocaleString('en-IN')}`
-              : 'Quote on Request'}
-          </Text>
-        </View>
-        <Text style={styles.noticeText}>{strings.cart.subtotalNotice}</Text>
+        {calculateGstBreakdown(estimatedSubtotal) ? (() => {
+          const gst = calculateGstBreakdown(estimatedSubtotal)!;
+          return (
+            <View style={styles.taxSummaryContainer}>
+              <View style={styles.taxRow}>
+                <Text style={styles.taxLabel}>Taxable Subtotal:</Text>
+                <Text style={styles.taxValue}>₹{gst.taxableSubtotal.toLocaleString('en-IN')}</Text>
+              </View>
+              <View style={styles.taxRow}>
+                <Text style={styles.taxLabel}>Estimated GST (12% • HSN {gst.hsnCode}):</Text>
+                <Text style={styles.taxValue}>₹{gst.gstAmount.toLocaleString('en-IN')}</Text>
+              </View>
+              <View style={[styles.totalRow, styles.totalRowBorder]}>
+                <Text style={styles.totalLabel}>Estimated Total (incl. GST):</Text>
+                <Text style={styles.totalValue}>₹{gst.estimatedTotal.toLocaleString('en-IN')}</Text>
+              </View>
+            </View>
+          );
+        })() : (
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Estimated Total:</Text>
+            <Text style={styles.totalValue}>
+              {estimatedSubtotal !== null
+                ? `₹${estimatedSubtotal.toLocaleString('en-IN')}`
+                : 'Quote on Request'}
+            </Text>
+          </View>
+        )}
+        <Text style={styles.noticeText}>
+          {estimatedSubtotal !== null
+            ? 'Informational GST estimate for HSN 9018. Final tax invoice issued upon dispatch.'
+            : strings.cart.subtotalNotice}
+        </Text>
         
         {isApproved && cartItems.length > 0 && (
           <Button
@@ -407,13 +436,15 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.base,
   },
   stepperBtn: {
-    width: 28,
-    height: 28,
+    minWidth: layout.minTouchTarget,
+    minHeight: layout.minTouchTarget,
+    width: layout.minTouchTarget,
+    height: layout.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepperBtnText: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.textPrimary,
   },
@@ -426,15 +457,18 @@ const styles = StyleSheet.create({
   },
   stepperInput: {
     width: 36,
-    height: 28,
+    height: layout.minTouchTarget,
     textAlign: 'center',
-    fontSize: typography.fontSizes.xs,
+    fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
     color: colors.textPrimary,
     padding: 0,
   },
   removeBtn: {
     paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    minHeight: layout.minTouchTarget,
+    justifyContent: 'center',
   },
   removeBtnText: {
     fontSize: typography.fontSizes.xs,
@@ -466,6 +500,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 4,
+  },
+  taxSummaryContainer: {
+    marginBottom: spacing.xs,
+  },
+  taxRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  taxLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+  },
+  taxValue: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textSecondary,
+  },
+  totalRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.xs,
+    marginTop: spacing.xs,
   },
   totalRow: {
     flexDirection: 'row',

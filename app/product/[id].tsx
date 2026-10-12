@@ -19,10 +19,14 @@ import { useAuth } from '@/lib/auth';
 import { useCartStore } from '@/lib/cart';
 import { ProductWithVariants, ProductVariant } from '@/types';
 import { VariantRow } from '@/components/VariantRow';
+import { Button } from '@/components/Button';
+import { APP_CONFIG } from '@/constants/config';
+import { shareProduct } from '@/lib/share';
 import { colors } from '@/constants/colors';
-import { spacing, typography, borderRadius } from '@/constants/theme';
+import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 import { logger } from '@/lib/logger';
+import { getOfflineProduct } from '@/lib/offlineCatalog';
 
 export default function ProductDetailScreen() {
   const router = useRouter();
@@ -60,7 +64,11 @@ export default function ProductDetailScreen() {
           .single();
 
         if (prodError || !prodData) {
-          logger.error('ProductDetail', 'Failed to fetch product', prodError);
+          logger.warn('ProductDetail', 'Failed to fetch remote product, checking offline catalog', prodError);
+          const offlineProd = await getOfflineProduct(productId);
+          if (offlineProd) {
+            setProduct(offlineProd);
+          }
           return;
         }
 
@@ -74,7 +82,11 @@ export default function ProductDetailScreen() {
           .order('art_no', { ascending: true });
 
         if (varError) {
-          logger.error('ProductDetail', 'Failed to fetch variants', varError);
+          logger.warn('ProductDetail', 'Failed to fetch variants, checking offline catalog', varError);
+          const offlineProd = await getOfflineProduct(productId);
+          if (offlineProd) {
+            setProduct(offlineProd);
+          }
           return;
         }
 
@@ -116,6 +128,9 @@ export default function ProductDetailScreen() {
             sizeCm: v.size_cm,
             price: v.price,
             currency: v.currency || 'INR',
+            stockQuantity: v.stock_quantity ?? 50,
+            isInStock: v.is_in_stock ?? true,
+            lowStockThreshold: v.low_stock_threshold ?? 5,
             isActive: v.is_active,
             createdAt: v.created_at,
             updatedAt: v.updated_at,
@@ -124,7 +139,11 @@ export default function ProductDetailScreen() {
 
         setProduct(mappedProduct);
       } catch (err) {
-        logger.error('ProductDetail', 'Unexpected error', err);
+        logger.warn('ProductDetail', 'Unexpected error, attempting offline catalog fallback', err);
+        const offlineProd = await getOfflineProduct(productId);
+        if (offlineProd) {
+          setProduct(offlineProd);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -153,6 +172,11 @@ export default function ProductDetailScreen() {
 
   const handleLoginPrompt = () => {
     router.push('/(auth)/login');
+  };
+
+  const handleShareProduct = async () => {
+    if (!product) return;
+    await shareProduct(product, APP_CONFIG.webBaseUrl);
   };
 
   if (isLoading) {
@@ -184,10 +208,23 @@ export default function ProductDetailScreen() {
       </View>
 
       <View style={styles.detailsCard}>
-        {product.category && (
-          <Text style={styles.categoryName}>{product.category.name}</Text>
-        )}
-        <Text style={styles.productName}>{product.name}</Text>
+        <View style={styles.detailsHeaderRow}>
+          <View style={styles.detailsTitleCol}>
+            {product.category && (
+              <Text style={styles.categoryName}>{product.category.name}</Text>
+            )}
+            <Text style={styles.productName}>{product.name}</Text>
+          </View>
+          <Button
+            title="Share 📤"
+            onPress={handleShareProduct}
+            variant="outline"
+            style={styles.shareBtn}
+            accessibilityRole="button"
+            accessibilityLabel={`Share ${product.name}`}
+            accessibilityHint="Shares instrument specifications, sizes, and order link via native share sheet"
+          />
+        </View>
 
         {product.description ? (
           <Text style={styles.descriptionText}>{product.description}</Text>
@@ -271,6 +308,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: spacing.base,
+  },
+  detailsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  detailsTitleCol: {
+    flex: 1,
+  },
+  shareBtn: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    minHeight: layout.minTouchTarget,
+    minWidth: layout.minTouchTarget,
   },
   categoryName: {
     fontSize: typography.fontSizes.xs,

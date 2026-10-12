@@ -1,87 +1,14 @@
 /**
- * Speqtus Medical Ordering Platform — Externalized UI Strings
- * Externalized for future localization (e.g. Hindi / regional languages).
+ * Speqtus Medical Ordering Platform — Externalized UI Strings (T5.P.7 / F-8)
+ * Dynamically resolves to active localized language bundle (English, Hindi, Gujarati).
  */
 
-export const strings = {
-  common: {
-    appName: 'Speqtus Medical',
-    tagline: 'Precision Surgical Instruments',
-    loading: 'Loading...',
-    retry: 'Retry',
-    cancel: 'Cancel',
-    save: 'Save',
-    submit: 'Submit',
-    back: 'Back',
-    done: 'Done',
-    copy: 'Copy',
-    copied: 'Copied to clipboard',
-    emptyState: 'No items found',
+import { en, TranslationBundle } from './translations/en';
+import { getActiveStrings } from '@/lib/i18n';
+
+export const strings: TranslationBundle = new Proxy(en, {
+  get(_target, prop: string) {
+    const active = getActiveStrings();
+    return (active as any)[prop] ?? (en as any)[prop];
   },
-  auth: {
-    phoneTitle: 'Enter your mobile number',
-    phoneSubtitle: 'We will send a 6-digit verification code',
-    phonePlaceholder: '98765 43210',
-    phonePrefix: '+91',
-    sendOtp: 'Send Verification Code',
-    otpTitle: 'Verify Code',
-    otpSubtitle: 'Enter the 6-digit code sent to',
-    verifyOtp: 'Verify & Continue',
-    resendOtp: 'Resend code',
-    googleSignIn: 'Continue with Google',
-    profileTitle: 'Complete Doctor Profile',
-    profileSubtitle: 'Required for verified account approval',
-    fullNameLabel: 'Full Name (Dr. / Hospital Contact)',
-    hospitalLabel: 'Hospital or Clinic Name',
-    regNoLabel: 'State Medical Reg. No. (Optional)',
-    specialtyLabel: 'Medical Specialty',
-    termsAgreement: 'I agree to the Speqtus Medical B2B Ordering Terms & Conditions',
-    pendingApprovalBanner: 'Your account is pending verification by Speqtus. You can browse the catalog while we verify your details.',
-    pendingNoticeTitle: 'Account Under Review',
-  },
-  catalog: {
-    categories: 'Categories',
-    allProducts: 'All Products',
-    searchPlaceholder: 'Search by Art No (e.g. 03-27-15) or instrument name...',
-    loginToSeePrice: 'Login to see price',
-    pendingApprovalPrice: 'Pending approval',
-    addToCart: 'Add to Cart',
-    sizesCount: (count: number) => `${count} ${count === 1 ? 'size' : 'sizes'}`,
-    artNoPrefix: 'Art No: ',
-  },
-  cart: {
-    title: 'Your Order Request',
-    emptyCartTitle: 'Your cart is empty',
-    emptyCartSubtitle: 'Browse categories or search by Art No to add surgical instruments.',
-    browseCatalog: 'Browse Catalog',
-    reviewOrder: 'Review & Submit',
-    deliveryAddress: 'Delivery Address',
-    orderNotes: 'Order Notes (Optional)',
-    orderNotesPlaceholder: 'e.g. Need delivery by Friday for scheduled OT procedure',
-    submitRequest: 'Submit Order Request',
-    subtotalNotice: 'Prices and totals will be confirmed by Speqtus upon order review.',
-  },
-  orders: {
-    title: 'My Orders',
-    orderNumberPrefix: 'Order #',
-    status: {
-      requested: 'Order Requested',
-      confirmed: 'Confirmed',
-      dispatched: 'Dispatched',
-      delivered: 'Delivered',
-      cancelled: 'Cancelled',
-    },
-    reorder: 'Reorder Items',
-    viewDetails: 'View Details',
-    noOrders: 'No past orders yet',
-  },
-  admin: {
-    dashboardTitle: 'Admin Back Office',
-    pendingApprovals: 'Pending Doctor Approvals',
-    approve: 'Approve Doctor',
-    reject: 'Reject',
-    orders: 'Manage Orders',
-    updateStatus: 'Update Status',
-    setPrice: 'Set Variant Price',
-  },
-};
+});

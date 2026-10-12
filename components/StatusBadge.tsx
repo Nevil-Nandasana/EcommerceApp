@@ -3,19 +3,27 @@
  * Governed by PRD Section 7 Accessibility.
  */
 
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, AccessibilityRole } from 'react-native';
 import { OrderStatus, ApprovalStatus } from '@/types';
 import { colors } from '@/constants/colors';
 import { typography, borderRadius, spacing } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 
-interface StatusBadgeProps {
+export interface StatusBadgeProps {
   status: OrderStatus | ApprovalStatus;
   type?: 'order' | 'approval';
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityHint?: string;
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, type = 'order' }) => {
+export const StatusBadge: React.FC<StatusBadgeProps> = ({
+  status,
+  type = 'order',
+  accessibilityLabel,
+  accessibilityRole = 'text',
+  accessibilityHint,
+}) => {
   const getBadgeStyle = () => {
     switch (status) {
       case 'confirmed':
@@ -66,8 +74,9 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, type = 'order'
         styles.badge,
         { backgroundColor: config.bg, borderColor: config.border },
       ]}
-      accessibilityRole="text"
-      accessibilityLabel={`Status: ${getLabel()}`}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel || `Status: ${getLabel()}`}
+      accessibilityHint={accessibilityHint}
     >
       <Text style={[styles.text, { color: config.text }]}>{getLabel()}</Text>
     </View>

@@ -20,6 +20,7 @@ import { colors } from '@/constants/colors';
 import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 import { logger } from '@/lib/logger';
+import { searchOfflineCatalog } from '@/lib/offlineCatalog';
 
 interface SearchResult {
   productId: string;
@@ -30,6 +31,9 @@ interface SearchResult {
   artNo: string;
   sizeLabel: string;
   price: number | null;
+  stockQuantity?: number | null;
+  isInStock?: boolean;
+  lowStockThreshold?: number | null;
   similarityScore: number;
 }
 
@@ -39,12 +43,14 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [isOfflineResult, setIsOfflineResult] = useState<boolean>(false);
 
   const performSearch = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) {
       setResults([]);
       setHasSearched(false);
+      setIsOfflineResult(false);
       return;
     }
 
@@ -57,11 +63,15 @@ export default function SearchScreen() {
       });
 
       if (error) {
-        logger.error('SearchScreen', 'Search RPC failed', error);
+        logger.warn('SearchScreen', 'Search RPC failed, falling back to offline catalog', error);
+        const offlineResults = await searchOfflineCatalog(trimmed, 30);
+        setResults(offlineResults);
+        setIsOfflineResult(offlineResults.length > 0);
         return;
       }
 
       if (data) {
+        setIsOfflineResult(false);
         setResults(
           data.map((r: any) => ({
             productId: r.product_id,
@@ -72,12 +82,18 @@ export default function SearchScreen() {
             artNo: r.art_no,
             sizeLabel: r.size_label,
             price: r.price,
+            stockQuantity: r.stock_quantity,
+            isInStock: r.is_in_stock,
+            lowStockThreshold: r.low_stock_threshold,
             similarityScore: r.similarity_score,
           }))
         );
       }
     } catch (err) {
-      logger.error('SearchScreen', 'Search error', err);
+      logger.warn('SearchScreen', 'Search exception, attempting offline catalog', err);
+      const offlineResults = await searchOfflineCatalog(trimmed, 30);
+      setResults(offlineResults);
+      setIsOfflineResult(offlineResults.length > 0);
     } finally {
       setIsLoading(false);
     }
@@ -107,6 +123,14 @@ export default function SearchScreen() {
           clearButtonMode="while-editing"
         />
       </View>
+
+      {isOfflineResult && results.length > 0 && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>
+            ⚡ Offline Mode: Showing local catalog results
+          </Text>
+        </View>
+      )}
 
       {isLoading && (
         <View style={styles.loadingContainer}>
@@ -138,6 +162,17 @@ export default function SearchScreen() {
                 {strings.catalog.artNoPrefix}
                 <Text style={styles.artNoBold}>{item.artNo}</Text> • {item.sizeLabel}
               </Text>
+              {item.stockQuantity !== undefined && item.stockQuantity !== null && (
+                <View style={styles.stockBadgeContainer}>
+                  {item.isInStock === false || item.stockQuantity === 0 ? (
+                    <Text style={styles.stockMuted}>• Made to Order</Text>
+                  ) : item.stockQuantity <= (item.lowStockThreshold || 5) ? (
+                    <Text style={styles.stockLow}>• Low Stock: {item.stockQuantity} left</Text>
+                  ) : (
+                    <Text style={styles.stockIn}>• In Stock</Text>
+                  )}
+                </View>
+              )}
             </View>
             <View style={styles.itemPriceCol}>
               {item.price !== null ? (
@@ -272,4 +307,36 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  offlineBanner: {
+    backgroundColor: '#eff6ff',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: '#bfdbfe',
+  },
+  offlineBannerText: {
+    fontSize: typography.fontSizes.xs,
+    color: '#1d4ed8',
+    fontWeight: typography.fontWeights.medium,
+    textAlign: 'center',
+  },
+  stockBadgeContainer: {
+    marginTop: 2,
+  },
+  stockIn: {
+    fontSize: typography.fontSizes.xs,
+    color: '#16a34a',
+    fontWeight: typography.fontWeights.medium,
+  },
+  stockLow: {
+    fontSize: typography.fontSizes.xs,
+    color: '#d97706',
+    fontWeight: typography.fontWeights.semibold,
+  },
+  stockMuted: {
+    fontSize: typography.fontSizes.xs,
+    color: '#6b7280',
+    fontStyle: 'italic',
+  },
 });
+

@@ -11,13 +11,14 @@ import {
   StyleSheet,
   ViewStyle,
   TextStyle,
+  AccessibilityRole,
 } from 'react-native';
 import { colors } from '@/constants/colors';
 import { layout, typography, borderRadius } from '@/constants/theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'danger';
 
-interface ButtonProps {
+export interface ButtonProps {
   title: string;
   onPress: () => void;
   variant?: ButtonVariant;
@@ -25,6 +26,9 @@ interface ButtonProps {
   loading?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityHint?: string;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -35,6 +39,9 @@ export const Button: React.FC<ButtonProps> = ({
   loading = false,
   style,
   textStyle,
+  accessibilityLabel,
+  accessibilityRole = 'button',
+  accessibilityHint,
 }) => {
   const getContainerStyle = (): ViewStyle => {
     switch (variant) {
@@ -75,7 +82,9 @@ export const Button: React.FC<ButtonProps> = ({
         (disabled || loading) && styles.disabledContainer,
         style,
       ]}
-      accessibilityRole="button"
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel || title}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: disabled || loading }}
     >
       {loading ? (

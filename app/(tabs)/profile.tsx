@@ -27,6 +27,7 @@ import { spacing, typography, borderRadius } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 import { APP_CONFIG } from '@/constants/config';
 import { logger } from '@/lib/logger';
+import { useI18n, LANGUAGE_OPTIONS } from '@/lib/i18n';
 
 const SPECIALTY_OPTIONS = [
   'General Surgery',
@@ -42,6 +43,7 @@ const SPECIALTY_OPTIONS = [
 export default function ProfileScreen() {
   const router = useRouter();
   const { session, user, profile, signOut, isPending, isAdmin, refreshProfile } = useAuth();
+  const { language: currentLanguage, setLanguage } = useI18n();
 
   const supportPhone = APP_CONFIG.supportPhone || APP_CONFIG.whatsappPhone;
 
@@ -277,6 +279,32 @@ export default function ProfileScreen() {
             <Text style={styles.supportSubtitle}>Chat directly with Speqtus ordering team</Text>
           </View>
         </TouchableOpacity>
+      </View>
+
+      {/* App Language Localization (T5.P.7 / F-8) */}
+      <View style={styles.sectionCard}>
+        <Text style={styles.sectionHeader}>{strings.common.language || 'Language (ભાષા / भाषा)'}</Text>
+        <Text style={styles.adminDesc}>
+          Choose your preferred app display language:
+        </Text>
+        <View style={styles.languageRow}>
+          {LANGUAGE_OPTIONS.map((opt) => {
+            const isActive = currentLanguage === opt.code;
+            return (
+              <TouchableOpacity
+                key={opt.code}
+                style={[styles.langChip, isActive && styles.langChipActive]}
+                onPress={() => setLanguage(opt.code)}
+                accessibilityRole="button"
+                accessibilityLabel={`Switch language to ${opt.label}`}
+              >
+                <Text style={[styles.langChipText, isActive && styles.langChipTextActive]}>
+                  {opt.nativeLabel} ({opt.code.toUpperCase()})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* Admin Back Office Link */}
@@ -707,4 +735,35 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  languageRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  langChip: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.base,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  langChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  langChipText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeights.medium,
+  },
+  langChipTextActive: {
+    color: colors.textOnPrimary,
+    fontWeight: typography.fontWeights.bold,
+  },
 });
+

@@ -27,8 +27,12 @@ import { ReorderWarningModal } from '@/components/ReorderWarningModal';
 import { OrderStatus, CartItem } from '@/types';
 import { APP_CONFIG } from '@/constants/config';
 import { checkReorderPriceChanges, ReorderItemDiff } from '@/lib/reorderCheck';
+import { shareOrder } from '@/lib/share';
+import { calculateGstBreakdown } from '@/lib/tax';
+import { initiateRazorpayPayment } from '@/lib/payments';
+import { viewOrDownloadInvoice } from '@/lib/invoiceGenerator';
 import { colors } from '@/constants/colors';
-import { spacing, typography, borderRadius } from '@/constants/theme';
+import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 import { logger } from '@/lib/logger';
 
@@ -55,6 +59,10 @@ interface FullOrderDetails {
   orderNumber: string;
   status: OrderStatus;
   subtotal: number | null;
+  paymentStatus: string;
+  paymentMethod?: string | null;
+  departmentName?: string | null;
+  onBehalfOfDoctor?: string | null;
   notes: string | null;
   createdAt: string;
   address: {
@@ -76,7 +84,7 @@ interface FullOrderDetails {
 export default function OrderDetailScreen() {
   const router = useRouter();
   const { id: orderId } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const addItemToCart = useCartStore((state) => state.addItem);
 
   const [order, setOrder] = useState<FullOrderDetails | null>(null);
@@ -94,6 +102,7 @@ export default function OrderDetailScreen() {
   const [reorderItemsToAdd, setReorderItemsToAdd] = useState<
     Array<{ item: Omit<CartItem, 'quantity'>; quantity: number }>
   >([]);
+  const [isPaying, setIsPaying] = useState(false);
 
   const fetchOrderDetails = async () => {
     if (!orderId) return;
@@ -107,6 +116,10 @@ export default function OrderDetailScreen() {
           order_number,
           status,
           subtotal,
+          payment_status,
+          payment_method,
+          department_name,
+          on_behalf_of_doctor,
           notes,
           created_at,
           courier_name,
@@ -191,6 +204,10 @@ export default function OrderDetailScreen() {
         orderNumber: ordData.order_number,
         status: ordData.status,
         subtotal: ordData.subtotal,
+        paymentStatus: (ordData as any).payment_status || 'not_applicable',
+        paymentMethod: (ordData as any).payment_method || null,
+        departmentName: (ordData as any).department_name || null,
+        onBehalfOfDoctor: (ordData as any).on_behalf_of_doctor || null,
         notes: ordData.notes,
         createdAt: ordData.created_at,
         address: addr || null,
@@ -374,6 +391,65 @@ export default function OrderDetailScreen() {
     });
   };
 
+  const handleShareOrder = async () => {
+    if (!order) return;
+    try {
+      await shareOrder(order, APP_CONFIG.webBaseUrl);
+    } catch (err) {
+      logger.error('OrderDetail', 'Failed to share order', err);
+    }
+  };
+
+  const handleOnlinePayment = async () => {
+    if (!order) return;
+    setIsPaying(true);
+    await initiateRazorpayPayment(
+      order.id,
+      (paymentId) => {
+        setIsPaying(false);
+        Alert.alert(
+          'Payment Successful! 🎉',
+          `Payment Reference: ${paymentId}\nThank you! Your payment has been received and verified. Speqtus team will dispatch your surgical order promptly.`
+        );
+        fetchOrderDetails();
+      },
+      (err) => {
+        setIsPaying(false);
+        Alert.alert('Payment Notice', err);
+      }
+    );
+  };
+
+  const handleViewGstInvoice = async () => {
+    if (!order || !user) return;
+    const invoiceDoctor = {
+      fullName: profile?.fullName || user.user_metadata?.full_name || 'Practitioner',
+      hospitalName: profile?.hospitalOrClinicName || 'Medical Clinic',
+      phone: profile?.phone || user.phone || '9876543210',
+      medicalRegNo: profile?.medicalRegistrationNumber || null,
+      address: order.address,
+    };
+    const invoiceItems = order.items.map((it) => ({
+      artNo: it.artNo,
+      productName: it.productName,
+      sizeLabel: it.sizeLabel,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice || 0,
+    }));
+    await viewOrDownloadInvoice(
+      {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        createdAt: order.createdAt,
+        subtotal: order.subtotal || 0,
+        paymentStatus: order.paymentStatus,
+        paymentMethod: order.paymentMethod,
+      },
+      invoiceDoctor,
+      invoiceItems
+    );
+  };
+
   if (isLoading) {
     return (
       <View style={styles.centerContainer}>
@@ -422,6 +498,18 @@ export default function OrderDetailScreen() {
             <Text style={styles.notesText}>{order.notes}</Text>
           </View>
         )}
+
+        {(order.departmentName || order.onBehalfOfDoctor) && (
+          <View style={styles.notesBox}>
+            <Text style={styles.notesLabel}>Hospital Department & Doctor:</Text>
+            {order.departmentName && (
+              <Text style={styles.notesText}>Department: {order.departmentName}</Text>
+            )}
+            {order.onBehalfOfDoctor && (
+              <Text style={styles.notesText}>On Behalf Of: {order.onBehalfOfDoctor}</Text>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Courier Tracking Info */}
@@ -452,19 +540,53 @@ export default function OrderDetailScreen() {
         </View>
       )}
 
-      {/* Tax Invoice Download (T5.F.10) */}
-      {order.invoiceUrl && (
+      {/* Online Payment Card (T5.P.6) */}
+      {(order.status === 'confirmed' || order.status === 'dispatched' || order.status === 'delivered') && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>GST Tax Invoice</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+            <Text style={styles.sectionTitle}>Payment Details</Text>
+            <StatusBadge
+              status={order.paymentStatus === 'paid' ? 'delivered' : 'requested'}
+            />
+          </View>
           <Text style={styles.invoiceNotice}>
-            An official tax invoice has been generated for this order.
+            {order.paymentStatus === 'paid'
+              ? `Payment confirmed via ${order.paymentMethod ? order.paymentMethod.toUpperCase() : 'RAZORPAY'}.`
+              : 'Your surgical order has been confirmed by Speqtus. You can complete payment online via UPI, Cards, or NetBanking.'}
+          </Text>
+          {order.paymentStatus !== 'paid' && order.subtotal !== null && order.subtotal > 0 && (
+            <Button
+              title={isPaying ? 'Connecting Payment Gateway...' : 'Pay with Razorpay / UPI 💳'}
+              onPress={handleOnlinePayment}
+              disabled={isPaying}
+              variant="primary"
+              style={{ marginTop: spacing.md }}
+            />
+          )}
+        </View>
+      )}
+
+      {/* Tax Invoice Download (T5.F.10 & Automated GST Invoice Generator) */}
+      {(order.status === 'confirmed' || order.status === 'dispatched' || order.status === 'delivered') && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>GST Tax Invoice (HSN 9018)</Text>
+          <Text style={styles.invoiceNotice}>
+            Official B2B Tax Invoice with 12% GST calculation, Speqtus manufacturer certification, and itemized HSN codes.
           </Text>
           <Button
-            title="Download Tax Invoice (PDF) 📄"
-            onPress={() => Linking.openURL(order.invoiceUrl!)}
+            title="View / Download GST Invoice (PDF) 📄"
+            onPress={handleViewGstInvoice}
             variant="secondary"
             style={{ marginTop: spacing.md }}
           />
+          {order.invoiceUrl && (
+            <Button
+              title="Download Attached Physical Invoice"
+              onPress={() => Linking.openURL(order.invoiceUrl!)}
+              variant="outline"
+              style={{ marginTop: spacing.sm }}
+            />
+          )}
         </View>
       )}
 
@@ -561,14 +683,45 @@ export default function OrderDetailScreen() {
           </View>
         ))}
 
-        <View style={styles.subtotalRow}>
-          <Text style={styles.subtotalLabel}>Order Subtotal:</Text>
-          <Text style={styles.subtotalValue}>
-            {order.subtotal !== null
-              ? `₹${order.subtotal.toLocaleString('en-IN')}`
-              : 'Price to be confirmed'}
-          </Text>
-        </View>
+        {calculateGstBreakdown(order.subtotal) ? (() => {
+          const gst = calculateGstBreakdown(order.subtotal)!;
+          return (
+            <View style={styles.taxSummaryContainer}>
+              <View style={styles.subtotalRow}>
+                <Text style={styles.subtotalLabel}>Taxable Subtotal:</Text>
+                <Text style={styles.subtotalValue}>
+                  ₹{gst.taxableSubtotal.toLocaleString('en-IN')}
+                </Text>
+              </View>
+              <View style={styles.taxRow}>
+                <Text style={styles.taxLabel}>
+                  Estimated GST (12% • HSN {gst.hsnCode}):
+                </Text>
+                <Text style={styles.taxValue}>
+                  ₹{gst.gstAmount.toLocaleString('en-IN')}
+                </Text>
+              </View>
+              <View style={[styles.subtotalRow, styles.totalRowBorder]}>
+                <Text style={styles.estimatedTotalLabel}>Estimated Total (incl. GST):</Text>
+                <Text style={styles.estimatedTotalValue}>
+                  ₹{gst.estimatedTotal.toLocaleString('en-IN')}
+                </Text>
+              </View>
+              <Text style={styles.taxNotice}>
+                Informational 12% GST estimate. Official tax invoice is issued upon dispatch.
+              </Text>
+            </View>
+          );
+        })() : (
+          <View style={styles.subtotalRow}>
+            <Text style={styles.subtotalLabel}>Order Subtotal:</Text>
+            <Text style={styles.subtotalValue}>
+              {order.subtotal !== null
+                ? `₹${order.subtotal.toLocaleString('en-IN')}`
+                : 'Price to be confirmed'}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Actions */}
@@ -587,6 +740,15 @@ export default function OrderDetailScreen() {
           variant="secondary"
           style={styles.actionBtn}
           loading={isCheckingReorder}
+        />
+        <Button
+          title="Share Order Summary 📤"
+          onPress={handleShareOrder}
+          variant="outline"
+          style={styles.actionBtn}
+          accessibilityRole="button"
+          accessibilityLabel={`Share Order ${order.orderNumber}`}
+          accessibilityHint="Shares order status, items summary, and tracking link via native share sheet"
         />
         <Button
           title="Inquire on WhatsApp 💬"
@@ -871,10 +1033,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    marginTop: spacing.sm,
   },
   subtotalLabel: {
     fontSize: typography.fontSizes.sm,
@@ -884,7 +1043,50 @@ const styles = StyleSheet.create({
   subtotalValue: {
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+  },
+  taxSummaryContainer: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  taxRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  taxLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+  },
+  taxValue: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.medium,
+    color: colors.textSecondary,
+  },
+  totalRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  estimatedTotalLabel: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+  },
+  estimatedTotalValue: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
     color: colors.accent,
+  },
+  taxNotice: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginTop: spacing.xs,
   },
   actionButtons: {
     gap: spacing.md,
@@ -892,6 +1094,7 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     width: '100%',
+    minHeight: layout.minTouchTarget,
   },
   trackingBox: {
     flexDirection: 'row',

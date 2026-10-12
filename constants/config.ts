@@ -9,4 +9,7 @@ export const APP_CONFIG = {
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
   supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
   r2PublicUrlPrefix: process.env.R2_PUBLIC_URL_PREFIX || 'https://images.speqtusmedical.com',
+  sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
+  webBaseUrl: process.env.EXPO_PUBLIC_WEB_URL || 'https://app.speqtusmedical.com',
+  razorpayKeyId: process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || '',
 };

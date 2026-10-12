@@ -4,24 +4,34 @@
  */
 
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, View, AccessibilityRole } from 'react-native';
 import { Category } from '@/types';
 import { colors } from '@/constants/colors';
 import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 
-interface CategoryCardProps {
+export interface CategoryCardProps {
   category: Category;
   onPress: (category: Category) => void;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityHint?: string;
 }
 
-export const CategoryCard: React.FC<CategoryCardProps> = ({ category, onPress }) => {
+export const CategoryCard: React.FC<CategoryCardProps> = ({
+  category,
+  onPress,
+  accessibilityLabel,
+  accessibilityRole = 'button',
+  accessibilityHint,
+}) => {
   return (
     <TouchableOpacity
       onPress={() => onPress(category)}
       style={styles.card}
       activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`Category: ${category.name}`}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel || `Category: ${category.name}`}
+      accessibilityHint={accessibilityHint || `Opens instruments list for ${category.name}`}
     >
       <View style={styles.bannerBadge}>
         <Text style={styles.bannerText} numberOfLines={1}>

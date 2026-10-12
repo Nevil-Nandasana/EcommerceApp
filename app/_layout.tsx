@@ -10,15 +10,23 @@ import { AuthProvider, useAuth } from '@/lib/auth';
 import { colors } from '@/constants/colors';
 import { prefetchCatalogThumbnails } from '@/lib/imageCache';
 import { startNetworkSync, stopNetworkSync } from '@/lib/networkSync';
+import { syncCloudCartWithLocal } from '@/lib/cartSync';
 import { supabase } from '@/lib/supabase';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { useI18n } from '@/lib/i18n';
+import { syncFullCatalogOffline } from '@/lib/offlineCatalog';
 
 function AppStartup() {
   const { isApproved, session, user } = useAuth();
   
   useEffect(() => {
+    useI18n.getState().initLanguage();
+  }, []);
+
+  useEffect(() => {
     if (session && user) {
       startNetworkSync(supabase, user.id);
+      syncCloudCartWithLocal(user.id).catch(() => {});
     }
     return () => stopNetworkSync();
   }, [session, user]);
@@ -30,6 +38,7 @@ function AppStartup() {
         if (data) {
           prefetchCatalogThumbnails(data.map(d => d.image_url));
         }
+        syncFullCatalogOffline().catch(() => {});
       };
       runPrefetch();
     }

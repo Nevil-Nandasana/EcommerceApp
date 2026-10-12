@@ -69,6 +69,31 @@ const cartStorageAdapter: StateStorage = {
   },
 };
 
+import { pushCartDeltaToServer, clearServerCart } from '@/lib/cartSync';
+import { supabase } from '@/lib/supabase';
+
+function triggerCloudSync(variantId: string, quantity: number) {
+  supabase.auth
+    .getUser()
+    .then(({ data }) => {
+      if (data?.user?.id) {
+        pushCartDeltaToServer(data.user.id, variantId, quantity).catch(() => {});
+      }
+    })
+    .catch(() => {});
+}
+
+function triggerCloudClear() {
+  supabase.auth
+    .getUser()
+    .then(({ data }) => {
+      if (data?.user?.id) {
+        clearServerCart(data.user.id).catch(() => {});
+      }
+    })
+    .catch(() => {});
+}
+
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
@@ -79,30 +104,38 @@ export const useCartStore = create<CartState>()(
           const existingIndex = state.cartItems.findIndex((i) => i.variantId === item.variantId);
           if (existingIndex > -1) {
             const updated = [...state.cartItems];
-            updated[existingIndex].quantity += quantity;
+            const newQty = updated[existingIndex].quantity + quantity;
+            updated[existingIndex].quantity = newQty;
+            triggerCloudSync(item.variantId, newQty);
             return { cartItems: updated };
           }
+          triggerCloudSync(item.variantId, quantity);
           return { cartItems: [...state.cartItems, { ...item, quantity }] };
         });
       },
 
       updateQuantity: (variantId, delta) => {
         set((state) => {
+          let updatedQty = 0;
           const updated = state.cartItems
             .map((item) => {
               if (item.variantId === variantId) {
                 const newQty = item.quantity + delta;
+                updatedQty = newQty;
                 return newQty > 0 ? { ...item, quantity: newQty } : null;
               }
               return item;
             })
             .filter((item): item is CartItem => item !== null);
+
+          triggerCloudSync(variantId, updatedQty);
           return { cartItems: updated };
         });
       },
 
       setQuantity: (variantId, quantity) => {
         set((state) => {
+          triggerCloudSync(variantId, quantity);
           if (quantity <= 0) {
             return { cartItems: state.cartItems.filter((i) => i.variantId !== variantId) };
           }
@@ -115,12 +148,14 @@ export const useCartStore = create<CartState>()(
       },
 
       removeItem: (variantId) => {
+        triggerCloudSync(variantId, 0);
         set((state) => ({
           cartItems: state.cartItems.filter((i) => i.variantId !== variantId),
         }));
       },
 
       clearCart: () => {
+        triggerCloudClear();
         set({ cartItems: [] });
       },
 

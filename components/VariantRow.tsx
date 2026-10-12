@@ -12,18 +12,22 @@ import {
   Alert,
   Platform,
   TextInput,
+  AccessibilityRole,
 } from 'react-native';
 import { ProductVariant } from '@/types';
 import { colors } from '@/constants/colors';
 import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 
-interface VariantRowProps {
+export interface VariantRowProps {
   variant: ProductVariant;
   isApproved: boolean;
   isGuest: boolean;
   onAddToCart: (variant: ProductVariant, quantity: number) => void;
   onLoginPrompt?: () => void;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityHint?: string;
 }
 
 export const VariantRow: React.FC<VariantRowProps> = ({
@@ -32,6 +36,9 @@ export const VariantRow: React.FC<VariantRowProps> = ({
   isGuest,
   onAddToCart,
   onLoginPrompt,
+  accessibilityLabel,
+  accessibilityRole,
+  accessibilityHint,
 }) => {
   const [quantity, setQuantity] = useState<number>(1);
 
@@ -76,7 +83,12 @@ export const VariantRow: React.FC<VariantRowProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel || `${variant.artNo}, ${variant.sizeLabel}`}
+      accessibilityHint={accessibilityHint}
+    >
       <View style={styles.detailsCol}>
         <Text style={styles.sizeText}>{variant.sizeLabel}</Text>
         <TouchableOpacity
@@ -84,12 +96,24 @@ export const VariantRow: React.FC<VariantRowProps> = ({
           delayLongPress={400}
           accessibilityRole="button"
           accessibilityLabel={`Article number ${variant.artNo}. Long press to copy.`}
+          accessibilityHint="Copies article number to clipboard"
         >
           <Text style={styles.artNoText}>
             {strings.catalog.artNoPrefix}
             <Text style={styles.artNoHighlight}>{variant.artNo}</Text>
           </Text>
         </TouchableOpacity>
+        {variant.stockQuantity !== undefined && variant.stockQuantity !== null && (
+          <View style={styles.stockBadgeContainer}>
+            {variant.isInStock === false || variant.stockQuantity === 0 ? (
+              <Text style={styles.stockMuted}>Made to Order (2-3 wks)</Text>
+            ) : variant.stockQuantity <= (variant.lowStockThreshold || 5) ? (
+              <Text style={styles.stockLow}>Low Stock: Only {variant.stockQuantity} left</Text>
+            ) : (
+              <Text style={styles.stockIn}>In Stock</Text>
+            )}
+          </View>
+        )}
       </View>
 
       <View style={styles.priceCol}>{renderPriceCell()}</View>
@@ -100,7 +124,8 @@ export const VariantRow: React.FC<VariantRowProps> = ({
             onPress={decrement}
             style={styles.stepperBtn}
             accessibilityRole="button"
-            accessibilityLabel="Decrease quantity"
+            accessibilityLabel={`Decrease quantity for ${variant.artNo}`}
+            accessibilityHint="Decreases order quantity by 1"
           >
             <Text style={styles.stepperBtnText}>-</Text>
           </TouchableOpacity>
@@ -120,12 +145,14 @@ export const VariantRow: React.FC<VariantRowProps> = ({
             selectTextOnFocus
             maxLength={3}
             accessibilityLabel={`Quantity ${quantity}. Tap to edit directly.`}
+            accessibilityHint="Allows manual numeric quantity entry"
           />
           <TouchableOpacity
             onPress={increment}
             style={styles.stepperBtn}
             accessibilityRole="button"
-            accessibilityLabel="Increase quantity"
+            accessibilityLabel={`Increase quantity for ${variant.artNo}`}
+            accessibilityHint="Increases order quantity by 1"
           >
             <Text style={styles.stepperBtnText}>+</Text>
           </TouchableOpacity>
@@ -135,6 +162,8 @@ export const VariantRow: React.FC<VariantRowProps> = ({
           onPress={() => onAddToCart(variant, quantity)}
           style={styles.addBtn}
           accessibilityRole="button"
+          accessibilityLabel={`Add ${variant.artNo} to cart`}
+          accessibilityHint="Adds specified quantity to your order request cart"
         >
           <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
@@ -212,8 +241,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   stepperBtn: {
-    width: 32,
-    height: 32,
+    minWidth: layout.minTouchTarget,
+    minHeight: layout.minTouchTarget,
+    width: layout.minTouchTarget,
+    height: layout.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -231,7 +262,7 @@ const styles = StyleSheet.create({
   },
   quantityInput: {
     width: 36,
-    height: 32,
+    height: layout.minTouchTarget,
     textAlign: 'center',
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
@@ -241,9 +272,11 @@ const styles = StyleSheet.create({
   addBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     borderRadius: borderRadius.base,
     minHeight: layout.minTouchTarget,
+    minWidth: layout.minTouchTarget,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   addBtnText: {
@@ -251,4 +284,23 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
   },
+  stockBadgeContainer: {
+    marginTop: 3,
+  },
+  stockIn: {
+    fontSize: typography.fontSizes.xs,
+    color: '#16a34a',
+    fontWeight: typography.fontWeights.medium,
+  },
+  stockLow: {
+    fontSize: typography.fontSizes.xs,
+    color: '#d97706',
+    fontWeight: typography.fontWeights.semibold,
+  },
+  stockMuted: {
+    fontSize: typography.fontSizes.xs,
+    color: '#6b7280',
+    fontStyle: 'italic',
+  },
 });
+
