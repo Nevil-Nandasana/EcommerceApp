@@ -27,6 +27,8 @@ import { spacing, typography, borderRadius } from '@/constants/theme';
 import { strings } from '@/constants/strings';
 import { APP_CONFIG } from '@/constants/config';
 import { logger } from '@/lib/logger';
+import { fetchUserOrganization } from '@/lib/organization';
+import { recordConsent } from '@/lib/consent';
 
 export default function CheckoutScreen() {
   const router = useRouter();
@@ -41,8 +43,23 @@ export default function CheckoutScreen() {
   const stateName = 'Gujarat';
   const [pincode, setPincode] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [departmentName, setDepartmentName] = useState<string>('');
+  const [onBehalfOfDoctor, setOnBehalfOfDoctor] = useState<string>('');
+  const [userOrgId, setUserOrgId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchUserOrganization(user.id).then(({ organization, membership }) => {
+      if (organization) {
+        setUserOrgId(organization.id);
+        if (membership?.department) {
+          setDepartmentName(membership.department);
+        }
+      }
+    });
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -207,6 +224,23 @@ export default function CheckoutScreen() {
 
       if (!rpcError && rpcData) {
         orderNumber = rpcData.order_number;
+
+        // Record hospital organization, department, and on-behalf-of-doctor attribution (PRD Section 2.3)
+        if (departmentName.trim() || onBehalfOfDoctor.trim() || userOrgId) {
+          await supabase
+            .from('orders')
+            .update({
+              organization_id: userOrgId || null,
+              department_name: departmentName.trim() || null,
+              on_behalf_of_doctor: onBehalfOfDoctor.trim() || null,
+            })
+            .eq('id', rpcData.id);
+        }
+        
+        // Record DPDP order communications consent
+        if (user?.id) {
+          recordConsent(user.id, 'order_communications').catch(() => {});
+        }
         
         // Fire and forget email alert
         supabase.functions.invoke('send-order-alert', { body: { order_id: rpcData.id } })
@@ -331,6 +365,27 @@ export default function CheckoutScreen() {
             </View>
           </View>
         )}
+      </View>
+
+      {/* Hospital Department & Doctor Attribution (PRD Section 2.3 & 10) */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Hospital Department & Doctor (Optional)</Text>
+        <Text style={[styles.reviewNotice, { marginBottom: spacing.sm }]}>
+          For hospital purchasing coordinators ordering on behalf of surgical departments.
+        </Text>
+        <Input
+          label="Hospital Department"
+          placeholder="e.g. Orthopedic OT / Cardio OT / General Surgery"
+          value={departmentName}
+          onChangeText={setDepartmentName}
+        />
+        <Input
+          label="On Behalf Of Doctor"
+          placeholder="e.g. Dr. M. K. Shah (Surgeon)"
+          value={onBehalfOfDoctor}
+          onChangeText={setOnBehalfOfDoctor}
+          containerStyle={{ marginTop: spacing.xs }}
+        />
       </View>
 
       <View style={styles.card}>

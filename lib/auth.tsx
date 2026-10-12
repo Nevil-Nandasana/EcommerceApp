@@ -8,6 +8,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { UserProfile, ApprovalStatus } from '@/types';
 import { logger } from '@/lib/logger';
+import { recordConsent } from '@/lib/consent';
 
 interface AuthContextValue {
   session: Session | null;
@@ -176,6 +177,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           pincode: details.address.pincode.trim(),
           is_default: true,
         });
+      }
+
+      // Record DPDP Act 2023 affirmative consents (T5.P.9)
+      try {
+        await Promise.all([
+          recordConsent(session.user.id, 'terms_of_service'),
+          recordConsent(session.user.id, 'privacy_policy'),
+          recordConsent(session.user.id, 'b2b_medical_data_processing'),
+        ]);
+      } catch (consentErr) {
+        logger.warn('Auth', 'Non-fatal consent recording error during profile completion', consentErr);
       }
 
       await fetchProfile(session.user.id);

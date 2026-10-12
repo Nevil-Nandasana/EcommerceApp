@@ -6,8 +6,8 @@
 export type UserRole = 'doctor' | 'admin';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type OrderStatus = 'requested' | 'confirmed' | 'dispatched' | 'delivered' | 'cancelled';
-export type PaymentStatus = 'not_applicable' | 'pending' | 'paid' | 'failed';
-export type PaymentMethod = 'bank_transfer' | 'pay_on_delivery';
+export type PaymentStatus = 'not_applicable' | 'pending' | 'paid' | 'failed' | 'refunded' | 'partially_paid';
+export type PaymentMethod = 'bank_transfer' | 'pay_on_delivery' | 'razorpay' | 'upi';
 
 export interface Category {
   id: string;
@@ -48,10 +48,16 @@ export interface ProductVariant {
   sizeCm: number | null;
   price: number | null; // Confidential per FR-5 (null for unapproved/guests)
   currency: string;
+  stockQuantity?: number | null; // Inventory tracking (T5.P.1 / F-15)
+  isInStock?: boolean;
+  lowStockThreshold?: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export type SupportedLanguage = 'en' | 'hi' | 'gu';
+
 
 export interface ProductWithVariants extends Product {
   category?: Category;
@@ -113,6 +119,12 @@ export interface Order {
   courierName?: string | null;
   trackingNumber?: string | null;
   trackingUrl?: string | null;
+  razorpayOrderId?: string | null;
+  razorpayPaymentId?: string | null;
+  razorpaySignature?: string | null;
+  organizationId?: string | null;
+  departmentName?: string | null;
+  onBehalfOfDoctor?: string | null;
   createdAt: string;
   updatedAt: string;
   items?: OrderItem[];
@@ -145,7 +157,7 @@ export interface SavedSet {
   userId: string;
   name: string;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
   items?: SavedSetItem[];
 }
 
@@ -156,4 +168,88 @@ export interface SavedSetItem {
   quantity: number;
   variant?: ProductVariant;
   product?: Product & { category?: { name: string } };
+}
+
+export interface PaymentRecord {
+  id: string;
+  orderId: string;
+  userId: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  paymentMethod: string;
+  gatewayOrderId?: string | null;
+  gatewayPaymentId?: string | null;
+  gatewaySignature?: string | null;
+  rawPayload?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CartSyncItem {
+  id?: string;
+  userId: string;
+  productVariantId: string;
+  quantity: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AdminAnalyticsSummary {
+  grossRevenue: number;
+  totalOrders: number;
+  averageOrderValue: number;
+  paidOrdersCount: number;
+  pendingPaymentCount: number;
+  unpricedItemsCount: number;
+  pendingDoctorsCount: number;
+  statusBreakdown: Record<OrderStatus, number>;
+  topInstruments: Array<{
+    artNo: string;
+    productName: string;
+    totalQuantity: number;
+    orderCount: number;
+  }>;
+}
+
+export type OrganizationMemberRole = 'admin' | 'purchaser' | 'surgeon';
+
+export interface Organization {
+  id: string;
+  name: string;
+  gstin?: string | null;
+  billingAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrganizationMember {
+  id: string;
+  organizationId: string;
+  userId: string;
+  memberRole: OrganizationMemberRole;
+  department?: string | null;
+  createdAt: string;
+  organization?: Organization;
+}
+
+export type ConsentType =
+  | 'terms_of_service'
+  | 'privacy_policy'
+  | 'b2b_medical_data_processing'
+  | 'order_communications';
+
+export interface ConsentRecord {
+  id: string;
+  userId: string;
+  consentType: ConsentType;
+  version: string;
+  isGranted: boolean;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  consentedAt: string;
+  withdrawnAt?: string | null;
 }
