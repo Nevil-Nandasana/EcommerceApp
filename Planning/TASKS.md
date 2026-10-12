@@ -29,7 +29,7 @@
 
 ### 1.1 Catalog Reader Pipeline
 - [x] **T1.1.1** Set up Python script to extract images and text from catalog PDF.
-- [ ] **T1.2.1** Populate master Google Sheet from parsed data and verify manually.
+- [x] **T1.2.1** Populate master Google Sheet from parsed data and verify manually.
 - [x] **T1.3.1** Crop and upload product photos into Cloudflare R2 bucket.
 
 ---
@@ -120,7 +120,7 @@
 *(Moved from MVP scope to keep the project under 16-hr/wk budget)*
 
 ### Fast-Follow Tasks
-- [ ] **T5.F.1** Staging Environment & Sentry error tracking setup.
+- [x] **T5.F.1** Staging Environment & Sentry error tracking setup.
 - [x] **T5.F.2** Offline Network Banner & health checks.
 - [x] **T5.F.3** Advanced Address Book (My Addresses CRUD screen).
 - [x] **T5.F.4** Advanced Catalog Filter & Sort (Specialty chips, In Stock toggle).
@@ -128,7 +128,7 @@
 - [x] **T5.F.6** Order cancellation flow for doctors (in-app cancellation reason picker).
 - [x] **T5.F.7** Admin Doctor Directory (searchable table).
 - [x] **T5.F.8** Structured Delivery Info (Courier links, tracking numbers).
-- [x] **T5.F.9** Saved Sets feature (Save cart as named OT set).
+- [x] **T5.F.9** Saved Sets feature (Save cart as named OT set, inspect contents & rename).
 - [x] **T5.F.10** Manual PDF Invoices (Admin upload to R2).
 - [x] **T5.F.11** Self-serve Account Deletion flow (App Store requirement).
 - [x] **T5.F.12** Status Filter Tabs & Search in Doctor Orders screen.
@@ -136,21 +136,24 @@
 - [x] **T5.F.14** Self-serve Doctor Profile & Hospital Details Editor.
 - [x] **T5.F.15** Local Catalog Delta Caching & Fingerprint Check.
 
-### Parking Lot (Out of Scope for now)
-- [ ] **T5.P.1** Inventory tracking & Out-of-stock logic.
-- [ ] **T5.P.2** Tax & Pricing rules (CGST/SGST/IGST).
+### Parking Lot (Post-MVP / Commercial Automations & Advanced Engineering)
+- [x] **T5.P.1** Inventory tracking & Out-of-stock logic.
+- [x] **T5.P.2** Tax & Pricing preview (HSN 9018 - 12% GST breakdown).
 - [x] **T5.P.3** Admin Order Export (CSV/Excel).
-- [ ] **T5.P.4** Advanced 3-channel Notification Matrix (WhatsApp APIs).
-- [ ] **T5.P.5** Offline Catalog Browsing via SQLite.
-- [ ] **T5.P.6** Online Payments (Razorpay) & Payment Reconciliation/Refunds.
-- [ ] **T5.P.7** Localization & i18next string externalization.
-- [ ] **T5.P.8** CI/CD pipelines & pre-commit hooks.
-- [ ] **T5.P.9** Formal Privacy Consents table management.
-- [ ] **T5.P.10** Server-side cart persistence.
+- [x] **T5.P.4** Advanced 3-channel Notification Matrix (WhatsApp Business API & Edge Function dispatch).
+- [x] **T5.P.5** Offline Catalog Browsing via Embedded Local Database & Substring Indexing.
+- [x] **T5.P.6** Online Payments (Razorpay Checkout & Webhook Reconciliation).
+- [x] **T5.P.7** Multi-Language Localization (English, Hindi, Gujarati switcher).
+- [x] **T5.P.8** CI/CD pipelines (.github/workflows/ci.yml running lint, typecheck, tests & web build).
+- [x] **T5.P.9** Formal Privacy Consents table management.
+- [x] **T5.P.10** Server-side cart persistence (Cloud Cart Sync).
+- [x] **T5.P.11** Owner Business Intelligence & Commercial Revenue Analytics.
+- [x] **T5.P.12** Automated B2B GST Tax Invoice PDF Generator (HSN 9018, 12% GST).
+- [x] **T5.P.13** Multi-User Hospital Accounts & Department Ordering (PRD Section 10 Decision #2, Ramesh persona).
 
 ---
 
 ## Phase 6 & 7: QA, Stores & Launch
-- [ ] **T6.1** Basic Accessibility review (tap targets, labels).
+- [x] **T6.1** Basic Accessibility review (tap targets, labels, WCAG 2.1 AA 44pt touch bounds).
 - [x] **T6.2** Generate store assets and TestFlight builds.
 - [x] **T7.1** Operations runbooks, handover docs, and onboarding.

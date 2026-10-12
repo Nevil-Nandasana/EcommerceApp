@@ -27,3 +27,14 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# Scratch & extraction temporary artifacts
+scratch/
+output/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Logs
+*.log

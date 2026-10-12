@@ -119,4 +119,40 @@ Phase 4 completed:
   - Feature 3: Reorder Price Transparency & Updated Quote Warning Modal (`components/ReorderWarningModal.tsx`, `lib/reorderCheck.ts`, `app/order/[id].tsx`, `app/(tabs)/orders.tsx`) comparing historical snapshot prices against current live catalog prices before cart population.
   - Feature 4: Self-Serve Doctor Profile & Hospital Details Editor (`app/(tabs)/profile.tsx`) with validation, length limits, and authenticated RLS update.
   - Feature 5: Local Catalog Delta Caching & Fingerprint Check (`lib/catalogCache.ts`, `app/(tabs)/index.tsx`, `app/category/[id].tsx`) enabling instant 0ms app boot and weak network resilience.
-  - Test Suite Expansion: Expanded `tests/run_tests.js` to 90 unit, security, and feature assertions covering all invariants with 100% pass rate.
+  - Polish Features: Native Share Sheets, Saved Sets inspection & inline rename, Estimated 12% GST Preview, WCAG 44pt touch targets, and Sentry logging.
+- [x] High-Impact Commercial & Automation Features Implementation (2026-10-12 Complete):
+  - Feature 1: Online Payments Gateway (Razorpay) & Lifecycle Management (`T5.P.6`): Migration `20261012000010_payments_and_cart_sync.sql` adding `payments` ledger table with RLS, razorpay columns to `orders`, Edge Functions `razorpay-order` (secure server-side creation & IDOR check) and `razorpay-webhook` (signature verification & payment reconciliation), and client checkout service (`lib/payments.ts`).
+  - Feature 2: Automated WhatsApp Business Cloud API Integration (`T5.P.4`): Edge Function `send-whatsapp-notification` and helper `lib/whatsappNotification.ts` dispatching automated order confirmation and dispatch alerts with courier tracking links.
+  - Feature 3: Automated GST B2B Invoice PDF Generator (`FR-20` / `T5.P.12`): `lib/invoiceGenerator.ts` producing printable B2B tax invoices with HSN 9018 classification, CGST/SGST/IGST breakdown, amount in Indian words, and instant 1-tap view/download on Web & native.
+  - Feature 4: Cross-Device Cloud Cart Synchronization (`T5.P.10`): Database table `cart_items` with strict user-isolated RLS, and `lib/cartSync.ts` providing bidirectional sync between local Zustand/AsyncStorage cart and Supabase on login, add, update, and clear actions.
+  - Feature 5: Owner Business Intelligence & Commercial Revenue Analytics (`T5.P.11`): Admin Analytics Dashboard tab in `app/admin/index.tsx` featuring real-time Gross Revenue, AOV, payment reconciliation, order status distribution progress bars, unpriced item alerts, and Top 5 in-demand surgical instruments.
+  - Test Suite Expansion: Expanded `tests/run_tests.js` to 155 unit, security, and commercial automation test assertions with 100% pass rate.
+- [x] Part-A Remaining Advanced Engineering Features (2026-10-12 Complete):
+  - Feature 1: Multi-User Hospital Accounts & Department Ordering (PRD Section 10 Decision #2, Ramesh persona): Migration `20261012000011_hospital_organizations.sql` introducing `organizations` and `organization_members` tables with institutional RLS, `lib/organization.ts`, order attribution inputs in `app/checkout.tsx`, and department badge in `app/order/[id].tsx`.
+  - Feature 2: Full Offline Embedded Catalog Database (FR-17 / `T5.P.5`): `lib/offlineCatalog.ts` providing local indexed database storage for categories, products, and variants with fast substring matching on Art No, product names, and search tags. Integrated seamless offline fallback into `app/(tabs)/search.tsx` and `app/product/[id].tsx`.
+  - Feature 3: Inventory Tracking & Stock-Level Logic (F-15 / `T5.P.1`): Migration `20261012000012_inventory_tracking.sql` adding `stock_quantity`, `is_in_stock`, and `low_stock_threshold` to `product_variants` with automatic status sync triggers. Added stock availability badges to `components/VariantRow.tsx`, `app/product/[id].tsx`, and inline inventory stock editor in `app/admin/index.tsx`.
+  - Feature 4: Multi-Language Localization Engine (F-8 / `T5.P.7`): Translation dictionaries for English (`en`), Hindi (`hi`), and Gujarati (`gu`) in `constants/translations/`. Reactive Zustand localization store `lib/i18n.ts` with persistent language preference and Language Switcher chip selector in `app/(tabs)/profile.tsx`. Dynamically proxied `constants/strings.ts` for zero breaking changes across existing views.
+  - Feature 5: Automated GitHub Actions CI/CD Pipeline (`T5.P.8`): Created `.github/workflows/ci.yml` running Node 20 dependency install, ESLint 9 checks, TypeScript typechecking, automated test suite, and Expo Web bundle verification.
+  - Comprehensive Test Suite Expansion: Added Test Suites 27, 28, 29, and 30 in `tests/run_tests.js`, scaling the test suite to 205 unit, security, and advanced engineering assertions with a 100% pass rate.
+- [x] Master Catalog PDF Data Ingestion & DPDP Privacy Consents Management (2026-10-12 Complete):
+  - Task 1: Master Catalog PDF Extraction & Seeding (`Phase 1` / `T1.1.1`, `T1.2.1`):
+    - Executed extraction pipeline on master 24MB PDF `CatPDF/SPEQTUS SURGICAL INSTRUMENTS.pdf` (105 pages).
+    - Extracted 103 high-resolution catalog page raster images into `output/catalog/pages/`.
+    - Integrated high-accuracy Windows Media OCR (`scripts/run_ocr_batch.ps1`) extracting lines, words, and coordinates into `output/catalog/ocr/`.
+    - Parsed **1,217 unique surgical instrument variants** across 36 subcategories and 6 major surgical specialties (General Surgery, Gynecology, Cardiac & Thoracic, Neurology & Spine, Orthopedic, ENT).
+    - Cropped and optimized **1,217 WebP product instrument images** into `output/catalog/images/`.
+    - Generated clean master datasets: `output/catalog/catalog_master.csv` (313 KB) and `output/catalog/catalog_master.json` (652 KB).
+    - Enhanced `scripts/seed_catalog.py` with `--dry-run` and live Supabase upsert capabilities, generating the offline master catalog bundle at `assets/catalog/master_catalog.json` (36 categories, 429 products, 1,217 variants).
+    - Wired `assets/catalog/master_catalog.json` directly into `lib/offlineCatalog.ts` as the instantaneous default offline database.
+  - Task 2: Formal Privacy & DPDP Consents Management (`T5.P.9`):
+    - Registered `consent_records` schema in `Planning/VARIABLE_REGISTRY.md` complying with India's Digital Personal Data Protection (DPDP) Act 2023.
+    - Created migration `supabase/migrations/20261012000013_privacy_consents.sql` with table `consent_records`, foreign keys, allowed consent types (`terms_of_service`, `privacy_policy`, `b2b_medical_data_processing`, `order_communications`), user-isolated RLS, and immutable audit policy blocking deletion.
+    - Added `ConsentRecord` and `ConsentType` to `types/index.ts`.
+    - Implemented `lib/consent.ts` client manager providing `recordConsent()`, `getUserConsents()`, `hasActiveConsent()`, and `withdrawConsent()`.
+    - Wired consent audit capture into `lib/auth.tsx` (during profile registration) and `app/checkout.tsx` (during order submission).
+  - Test Suite Expansion:
+    - Added Test Suites 32 & 33 in `tests/run_tests.js`, scaling total verified unit and security test assertions to **233 assertions with a 100% pass rate**.
+  - Action Item for Next Iteration (Catalog Image Quality Refinement):
+    - User reviewed initial PDF image extractions and noted that raw catalog page crops require precision re-cropping and commercial image cleanup before store release.
+    - Raw extraction artifacts (`output/`) are kept out of GitHub. Image refinement and individual transparent WebP asset polishing are scheduled for the next iteration.
+

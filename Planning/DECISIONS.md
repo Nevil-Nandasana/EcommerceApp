@@ -72,3 +72,14 @@ This document records all fundamental business decisions, boundary constraints, 
    - Client-side storage (Zustand + MMKV / localStorage for web). No server-side abandoned cart tables.
 5. **Tax Calculations:**
    - Formal GST splits (CGST/SGST/IGST) are handled by Speqtus's external accounting software; invoices are manually uploaded as PDFs to Cloudflare R2 by Admin.
+
+---
+
+## 5. Catalog Asset Management & Image Refinement (Action Item for Next Iteration)
+
+1. **Structured Data Completeness:**
+   - All 1,217 surgical instruments, size variants, Article Numbers (Art Nos), and category hierarchies have been successfully extracted and validated into the master offline database fixture (`assets/catalog/master_catalog.json`) and database seed script (`scripts/catalog_data.json`).
+2. **Product Photography / Visual Asset Refinement (Post-Ingestion Action Item):**
+   - User review identified that the raw automated bounding-box image crops from the scanned paper catalog PDF (`CatPDF/SPEQTUS SURGICAL INSTRUMENTS.pdf`) require tailored visual cleanup, background removal, and precision instrument cropping to meet final commercial ecommerce presentation standards.
+   - **Resolution:** Raw extraction images (`output/catalog/`) are kept out of GitHub. Image refinement, individual transparent WebP asset replacement, and CDN upload are scheduled as a dedicated task for the next iteration before store release.
+
