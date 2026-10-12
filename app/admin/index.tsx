@@ -30,6 +30,7 @@ import { OrderStatus, UserProfile } from '@/types';
 import { colors } from '@/constants/colors';
 import { spacing, typography, borderRadius } from '@/constants/theme';
 import { logger } from '@/lib/logger';
+import { sendWhatsAppAlert } from '@/lib/whatsappNotification';
 
 interface AdminOrderItem {
   id: string;
@@ -47,6 +48,8 @@ interface AdminOrder {
   orderNumber: string;
   status: OrderStatus;
   subtotal: number | null;
+  paymentStatus?: string;
+  paymentMethod?: string | null;
   createdAt: string;
   doctorName: string;
   hospitalName: string;
@@ -65,12 +68,15 @@ interface AdminProductVariant {
   artNo: string;
   sizeLabel: string;
   price: number | null;
+  stockQuantity: number;
+  isInStock: boolean;
+  lowStockThreshold: number;
   isActive: boolean;
 }
 
 export default function AdminDashboardScreen() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'approvals' | 'orders' | 'products' | 'directory'>('approvals');
+  const [activeTab, setActiveTab] = useState<'approvals' | 'orders' | 'products' | 'directory' | 'analytics'>('approvals');
 
   // Approvals & Directory state
   const [doctors, setDoctors] = useState<UserProfile[]>([]);
@@ -95,6 +101,7 @@ export default function AdminDashboardScreen() {
   const [variants, setVariants] = useState<AdminProductVariant[]>([]);
   const [productSearch, setProductSearch] = useState<string>('');
   const [editingVariantPrice, setEditingVariantPrice] = useState<{ [variantId: string]: string }>({});
+  const [editingVariantStock, setEditingVariantStock] = useState<{ [variantId: string]: string }>({});
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -138,6 +145,8 @@ export default function AdminDashboardScreen() {
           order_number,
           status,
           subtotal,
+          payment_status,
+          payment_method,
           created_at,
           notes,
           courier_name,
@@ -172,6 +181,8 @@ export default function AdminDashboardScreen() {
             orderNumber: o.order_number,
             status: o.status,
             subtotal: o.subtotal,
+            paymentStatus: o.payment_status || 'not_applicable',
+            paymentMethod: o.payment_method || null,
             createdAt: o.created_at,
             doctorName: o.users?.full_name || 'Doctor',
             hospitalName: o.users?.hospital_or_clinic_name || 'Clinic',
@@ -194,7 +205,7 @@ export default function AdminDashboardScreen() {
         );
       }
 
-      // 3. Fetch products and variants for pricing management
+      // 3. Fetch products and variants for pricing and inventory management
       const { data: varData, error: varError } = await supabase
         .from('product_variants')
         .select(`
@@ -203,6 +214,9 @@ export default function AdminDashboardScreen() {
           art_no,
           size_label,
           price,
+          stock_quantity,
+          is_in_stock,
+          low_stock_threshold,
           is_active,
           products ( name )
         `)
@@ -220,6 +234,9 @@ export default function AdminDashboardScreen() {
             artNo: v.art_no,
             sizeLabel: v.size_label,
             price: v.price,
+            stockQuantity: v.stock_quantity ?? 50,
+            isInStock: v.is_in_stock ?? true,
+            lowStockThreshold: v.low_stock_threshold ?? 5,
             isActive: v.is_active,
           }))
         );
@@ -283,6 +300,30 @@ export default function AdminDashboardScreen() {
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
       );
+
+      // Automated WhatsApp Notification Dispatch (T5.P.4)
+      const targetOrder = orders.find((o) => o.id === orderId);
+      if (targetOrder && targetOrder.phone) {
+        if (nextStatus === 'confirmed') {
+          sendWhatsAppAlert({
+            type: 'order_confirmed',
+            phone: targetOrder.phone,
+            doctorName: targetOrder.doctorName,
+            orderNumber: targetOrder.orderNumber,
+            amount: targetOrder.subtotal || undefined,
+          }).catch(() => {});
+        } else if (nextStatus === 'dispatched') {
+          sendWhatsAppAlert({
+            type: 'order_dispatched',
+            phone: targetOrder.phone,
+            doctorName: targetOrder.doctorName,
+            orderNumber: targetOrder.orderNumber,
+            courierName: courierPayload?.courierName,
+            trackingNumber: courierPayload?.trackingNumber,
+          }).catch(() => {});
+        }
+      }
+
       if (nextStatus === 'dispatched') {
         setDispatchingOrderId(null);
         setCourierName('');
@@ -402,6 +443,39 @@ export default function AdminDashboardScreen() {
       );
     } catch (err) {
       logger.error('AdminDashboard', 'Save variant price failed', err);
+    }
+  };
+
+  // Variant Inventory Stock Editor (T5.P.1 / F-15)
+  const handleSaveVariantStock = async (variantId: string) => {
+    const rawVal = editingVariantStock[variantId];
+    if (rawVal === undefined || rawVal === '') return;
+
+    const numVal = parseInt(rawVal, 10);
+    if (isNaN(numVal) || numVal < 0) {
+      Alert.alert('Invalid Stock', 'Please enter a non-negative integer.');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('product_variants')
+        .update({ stock_quantity: numVal, is_in_stock: numVal > 0 })
+        .eq('id', variantId);
+
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+
+      Alert.alert('Success', `Stock quantity set to ${numVal} units.`);
+      setVariants((prev) =>
+        prev.map((v) =>
+          v.id === variantId ? { ...v, stockQuantity: numVal, isInStock: numVal > 0 } : v
+        )
+      );
+    } catch (err) {
+      logger.error('AdminDashboard', 'Save variant stock failed', err);
     }
   };
 
@@ -525,6 +599,66 @@ export default function AdminDashboardScreen() {
     });
   }, [variants, productSearch]);
 
+  // Business Intelligence & Revenue Analytics (T5.P.11)
+  const analyticsData = useMemo(() => {
+    let grossRevenue = 0;
+    let confirmedOrAboveCount = 0;
+    let paidCount = 0;
+    let pendingPaymentCount = 0;
+    let unpricedCount = 0;
+    const statusCounts: Record<string, number> = {
+      requested: 0,
+      confirmed: 0,
+      dispatched: 0,
+      delivered: 0,
+      cancelled: 0,
+    };
+    const instrumentMap: { [artNo: string]: { productName: string; qty: number; count: number } } = {};
+
+    orders.forEach((o) => {
+      statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
+      if (['confirmed', 'dispatched', 'delivered'].includes(o.status) && o.subtotal) {
+        grossRevenue += Number(o.subtotal);
+        confirmedOrAboveCount += 1;
+      }
+      if (o.status === 'delivered' || o.paymentStatus === 'paid') {
+        paidCount += 1;
+      } else if (['confirmed', 'dispatched'].includes(o.status)) {
+        pendingPaymentCount += 1;
+      }
+      o.items.forEach((it) => {
+        if (it.unitPrice === null) unpricedCount += 1;
+        if (it.artNo) {
+          if (!instrumentMap[it.artNo]) {
+            instrumentMap[it.artNo] = { productName: it.productName, qty: 0, count: 0 };
+          }
+          instrumentMap[it.artNo].qty += it.quantity;
+          instrumentMap[it.artNo].count += 1;
+        }
+      });
+    });
+
+    const topInstruments = Object.entries(instrumentMap)
+      .map(([artNo, val]) => ({ artNo, productName: val.productName, qty: val.qty, count: val.count }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+
+    const averageOrderValue = confirmedOrAboveCount > 0 ? Math.round(grossRevenue / confirmedOrAboveCount) : 0;
+
+    return {
+      grossRevenue,
+      totalOrders: orders.length,
+      averageOrderValue,
+      paidCount,
+      pendingPaymentCount,
+      unpricedCount,
+      pendingDoctorsCount: pendingDoctors.length,
+      totalDoctorsCount: doctors.length,
+      statusCounts,
+      topInstruments,
+    };
+  }, [orders, pendingDoctors, doctors]);
+
   if (isLoading) {
     return (
       <View style={styles.centerContainer}>
@@ -535,7 +669,7 @@ export default function AdminDashboardScreen() {
 
   return (
     <View style={styles.container}>
-      {/* 3-Tab Header */}
+      {/* 5-Tab Header */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tabItem, activeTab === 'approvals' && styles.tabItemActive]}
@@ -590,6 +724,20 @@ export default function AdminDashboardScreen() {
             ]}
           >
             Directory
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'analytics' && styles.tabItemActive]}
+          onPress={() => setActiveTab('analytics')}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'analytics' && styles.tabTextActive,
+            ]}
+          >
+            Analytics 📊
           </Text>
         </TouchableOpacity>
       </View>
@@ -953,6 +1101,9 @@ export default function AdminDashboardScreen() {
                   <Text style={styles.productName}>{item.productName}</Text>
                   <Text style={styles.artNoBold}>Art No: {item.artNo}</Text>
                   <Text style={styles.itemDetailText}>{item.sizeLabel}</Text>
+                  <Text style={[styles.itemDetailText, { color: item.isInStock ? '#16a34a' : '#dc2626', fontWeight: '500' }]}>
+                    📦 {item.stockQuantity} in stock ({item.isInStock ? 'Available' : 'Made to Order'})
+                  </Text>
                 </View>
 
                 <View style={styles.variantRightCol}>
@@ -972,6 +1123,25 @@ export default function AdminDashboardScreen() {
                       onPress={() => handleSaveVariantPrice(item.id)}
                     >
                       <Text style={styles.priceSaveText}>Save</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={[styles.priceEditRow, { marginTop: 4 }]}>
+                    <Text style={styles.rupeeSign}>📦</Text>
+                    <TextInput
+                      style={styles.priceInput}
+                      placeholder={String(item.stockQuantity)}
+                      keyboardType="numeric"
+                      value={editingVariantStock[item.id] ?? String(item.stockQuantity)}
+                      onChangeText={(txt) =>
+                        setEditingVariantStock((prev) => ({ ...prev, [item.id]: txt }))
+                      }
+                    />
+                    <TouchableOpacity
+                      style={styles.priceSaveBtn}
+                      onPress={() => handleSaveVariantStock(item.id)}
+                    >
+                      <Text style={styles.priceSaveText}>Qty</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -1095,6 +1265,98 @@ export default function AdminDashboardScreen() {
             }
           />
         </View>
+      )}
+
+      {/* TAB 5: Business Intelligence & Revenue Analytics (T5.P.11) */}
+      {activeTab === 'analytics' && (
+        <ScrollView style={styles.analyticsContainer} contentContainerStyle={styles.analyticsContent}>
+          <Text style={styles.analyticsSectionTitle}>Commercial Performance Overview</Text>
+
+          {/* Top KPI Cards Grid */}
+          <View style={styles.kpiGrid}>
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>Gross Confirmed Revenue</Text>
+              <Text style={styles.kpiValueHighlight}>₹{analyticsData.grossRevenue.toLocaleString('en-IN')}</Text>
+              <Text style={styles.kpiSub}>From confirmed & shipped orders</Text>
+            </View>
+
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>Average Order Value (AOV)</Text>
+              <Text style={styles.kpiValue}>₹{analyticsData.averageOrderValue.toLocaleString('en-IN')}</Text>
+              <Text style={styles.kpiSub}>Across {analyticsData.totalOrders} total orders</Text>
+            </View>
+
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>Payment Status</Text>
+              <View style={styles.kpiRow}>
+                <Text style={styles.kpiValueGreen}>{analyticsData.paidCount} Paid</Text>
+                <Text style={styles.kpiValueAmber}>{analyticsData.pendingPaymentCount} Pending</Text>
+              </View>
+              <Text style={styles.kpiSub}>Razorpay & bank reconciliation</Text>
+            </View>
+
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>Doctor Network</Text>
+              <Text style={styles.kpiValue}>{analyticsData.totalDoctorsCount}</Text>
+              <Text style={styles.kpiSub}>{analyticsData.pendingDoctorsCount} awaiting approval</Text>
+            </View>
+          </View>
+
+          {/* Pricing Attention Alert */}
+          {analyticsData.unpricedCount > 0 && (
+            <View style={styles.attentionBanner}>
+              <Text style={styles.attentionTitle}>⚠️ Pricing Attention Required</Text>
+              <Text style={styles.attentionText}>
+                {analyticsData.unpricedCount} ordered line items currently have a NULL unit price snapshot awaiting custom quote pricing.
+              </Text>
+            </View>
+          )}
+
+          {/* Order Lifecycle Distribution */}
+          <Text style={[styles.analyticsSectionTitle, { marginTop: spacing.lg }]}>Order Status Distribution</Text>
+          <View style={styles.statusBreakdownCard}>
+            {Object.entries(analyticsData.statusCounts).map(([status, count]) => (
+              <View key={status} style={styles.statusRow}>
+                <View style={styles.statusLabelCol}>
+                  <StatusBadge status={status as any} />
+                </View>
+                <View style={styles.statusBarContainer}>
+                  <View
+                    style={[
+                      styles.statusBarFill,
+                      {
+                        width: `${analyticsData.totalOrders > 0 ? Math.round((count / analyticsData.totalOrders) * 100) : 0}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.statusCountText}>{count}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Top 5 In-Demand Surgical Instruments */}
+          <Text style={[styles.analyticsSectionTitle, { marginTop: spacing.lg }]}>Top 5 In-Demand Instruments</Text>
+          <View style={styles.topInstrumentsCard}>
+            {analyticsData.topInstruments.length === 0 ? (
+              <Text style={styles.emptyText}>No instrument orders recorded yet.</Text>
+            ) : (
+              analyticsData.topInstruments.map((inst, index) => (
+                <View key={inst.artNo} style={styles.topInstrumentRow}>
+                  <Text style={styles.topInstrumentRank}>#{index + 1}</Text>
+                  <View style={styles.topInstrumentDetails}>
+                    <Text style={styles.topInstrumentName}>{inst.productName}</Text>
+                    <Text style={styles.topInstrumentArt}>Art No: {inst.artNo}</Text>
+                  </View>
+                  <View style={styles.topInstrumentQtyCol}>
+                    <Text style={styles.topInstrumentQty}>{inst.qty} units</Text>
+                    <Text style={styles.topInstrumentOrders}>{inst.count} orders</Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -1486,5 +1748,167 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderRadius: borderRadius.sm,
     marginTop: spacing.xs,
+  },
+  analyticsContainer: {
+    flex: 1,
+  },
+  analyticsContent: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  analyticsSectionTitle: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  kpiCard: {
+    flex: 1,
+    minWidth: 150,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  kpiLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeights.medium,
+    marginBottom: 4,
+  },
+  kpiValueHighlight: {
+    fontSize: typography.fontSizes.xl,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+  },
+  kpiValue: {
+    fontSize: typography.fontSizes.xl,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+  },
+  kpiRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  kpiValueGreen: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: '#059669',
+  },
+  kpiValueAmber: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: '#d97706',
+  },
+  kpiSub: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  attentionBanner: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  attentionTitle: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: '#92400e',
+    marginBottom: 2,
+  },
+  attentionText: {
+    fontSize: typography.fontSizes.xs,
+    color: '#78350f',
+  },
+  statusBreakdownCard: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  statusLabelCol: {
+    width: 100,
+  },
+  statusBarContainer: {
+    flex: 1,
+    height: 8,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  statusBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 4,
+  },
+  statusCountText: {
+    width: 30,
+    textAlign: 'right',
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+  },
+  topInstrumentsCard: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  topInstrumentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surfaceSubtle,
+  },
+  topInstrumentRank: {
+    width: 28,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textMuted,
+  },
+  topInstrumentDetails: {
+    flex: 1,
+  },
+  topInstrumentName: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+  },
+  topInstrumentArt: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  topInstrumentQtyCol: {
+    alignItems: 'flex-end',
+  },
+  topInstrumentQty: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+  },
+  topInstrumentOrders: {
+    fontSize: 10,
+    color: colors.textMuted,
   },
 });
