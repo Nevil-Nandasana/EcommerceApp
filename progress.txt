@@ -1,5 +1,8 @@
 # Speqtus Medical Ordering Platform — Execution Progress Log
 
+> **NEXT SESSION IMMEDIATE PRIORITY:** Catalog Product Image Quality & Isolation Refinement.
+> Per user audit, raw PDF bounding-box crops hold scanned page artifacts / banners. Precision cropping and studio asset replacement are queued as top priority for next session. Full plan documented in `Planning/CATALOG_IMAGE_REFINEMENT.md` and `Planning/DECISIONS.md` (Section 5).
+
 ## Phase 0: Project Setup, Tooling & Business Sign-off [COMPLETED]
 - Git repository and `.gitignore` verified.
 - Expo project initialized with TypeScript template, `expo-router`, and strict compiler options.

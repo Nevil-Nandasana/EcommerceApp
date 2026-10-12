@@ -32,6 +32,12 @@
 - [x] **T1.2.1** Populate master Google Sheet from parsed data and verify manually.
 - [x] **T1.3.1** Crop and upload product photos into Cloudflare R2 bucket.
 
+### 1.2 Catalog Image Quality Refinement (NEXT SESSION IMMEDIATE PRIORITY)
+> **Reference:** [Planning/CATALOG_IMAGE_REFINEMENT.md](./CATALOG_IMAGE_REFINEMENT.md)  
+> User audit identified that initial PDF crops hold page banner artifacts rather than isolated ecommerce instruments.
+- [ ] **T1.2.2** Refine instrument bounding box isolation / background cleanup to eliminate printed catalog banner text.
+- [ ] **T1.2.3** Generate clean studio-grade WebP product images (800px full, 200px thumb) and sync to Cloudflare R2 bucket.
+
 ---
 
 ## Phase 2: Database Foundation & Security (Week 4)
